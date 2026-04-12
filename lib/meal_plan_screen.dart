@@ -1754,25 +1754,25 @@ class _GoalStyle {
 }
 
 const _styleWeightLoss = _GoalStyle(
-  cardBg: Color(0xFF5C3D2E),
+  cardBg: Color(0xFF5C3D2E), // primary brown
   iconBg: Color(0xFF7A5240),
   iconColor: Color(0xFFC9A87C),
   titleColor: Colors.white,
   subColor: Color(0xFFD4B896),
 );
 const _styleMaintain = _GoalStyle(
-  cardBg: Color(0xFFE6D3B3),
-  iconBg: Color(0xFFD4BB95),
-  iconColor: Color(0xFF5C3D2E),
-  titleColor: Color(0xFF3B2214),
-  subColor: Color(0xFF7A5C3E),
-);
-const _styleMuscleGain = _GoalStyle(
-  cardBg: Color(0xFF3B2214),
+  cardBg: Color(0xFF3B2214), // dark brown
   iconBg: Color(0xFF5C3D2E),
   iconColor: Color(0xFFC9A87C),
   titleColor: Colors.white,
   subColor: Color(0xFFBFA08A),
+);
+const _styleMuscleGain = _GoalStyle(
+  cardBg: Color(0xFF8B6351), // primaryLight brown
+  iconBg: Color(0xFF7A5240),
+  iconColor: Color(0xFFEDD9C0),
+  titleColor: Colors.white,
+  subColor: Color(0xFFEDD9C0),
 );
 
 class MealPlanScreen extends StatefulWidget {
@@ -1846,50 +1846,165 @@ class _MealPlanScreenState extends State<MealPlanScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text("Meal Plans"),
-      ),
       body: _loading
           ? const Center(
               child: CircularProgressIndicator(color: AppTheme.accent),
             )
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 36),
-              children: [
-                if (_userGoal != null) ...[
-                  _RecommendedBanner(goalLabel: _userGoal!),
-                  const SizedBox(height: 20),
-                ],
-                Text(
-                  "What's your goal?",
-                  style: AppTheme.body.copyWith(fontSize: 14),
-                ),
-                const SizedBox(height: 14),
-                ..._goals.map((goal) {
-                  final bool isRec = _userGoal == goal["label"];
-                  final _GoalStyle st = goal["style"] as _GoalStyle;
-                  return _GoalCard(
-                    goal: goal,
-                    style: st,
-                    isRecommended: isRec,
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => _MealDetailScreen(
-                          goalLabel: goal["label"] as String,
-                          goalStyle: st,
-                          goalCal: goal["cal"] as String,
-                        ),
+          : CustomScrollView(
+              slivers: [
+                // ── Hero header ──────────────────────────────────────────────
+                SliverToBoxAdapter(
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(24, 60, 24, 32),
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Color(0xFF3B2214), Color(0xFF5C3D2E)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.only(
+                        bottomLeft: Radius.circular(36),
+                        bottomRight: Radius.circular(36),
                       ),
                     ),
-                  );
-                }),
-                const SizedBox(height: 4),
-                _ExploreRestaurantsCard(),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // back button
+                        GestureDetector(
+                          onTap: () => Navigator.pop(context),
+                          child: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.arrow_back_ios_new_rounded,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        const Text(
+                          "Meal Plans",
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 30,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          "Choose a plan that matches your goal",
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 14,
+                            color: Colors.white.withOpacity(0.7),
+                          ),
+                        ),
+                        if (_userGoal != null) ...[
+                          const SizedBox(height: 20),
+                          // Recommended pill
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: AppTheme.accent.withOpacity(0.5),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.auto_awesome_rounded,
+                                  color: AppTheme.accent,
+                                  size: 16,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  "Recommended for you: ",
+                                  style: TextStyle(
+                                    fontFamily: 'Poppins',
+                                    fontSize: 12,
+                                    color: Colors.white.withOpacity(0.8),
+                                  ),
+                                ),
+                                Text(
+                                  _userGoal!,
+                                  style: const TextStyle(
+                                    fontFamily: 'Poppins',
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppTheme.accent,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+
+                // ── Goal cards ───────────────────────────────────────────────
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(20, 28, 20, 8),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate((ctx, i) {
+                      if (i < _goals.length) {
+                        final goal = _goals[i];
+                        final bool isRec =
+                            _userGoal != null &&
+                            (goal["label"] as String).contains(
+                              _userGoal!.split(' ').first,
+                            );
+                        final _GoalStyle st = goal["style"] as _GoalStyle;
+                        return _GoalCard(
+                          goal: goal,
+                          style: st,
+                          isRecommended: isRec,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => _MealDetailScreen(
+                                goalLabel: goal["label"] as String,
+                                goalStyle: st,
+                                goalCal: goal["cal"] as String,
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+                      // Explore restaurants card
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 8),
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Text(
+                              "Or explore restaurants",
+                              style: AppTheme.subheading.copyWith(fontSize: 15),
+                            ),
+                          ),
+                          _ExploreRestaurantsCard(),
+                          const SizedBox(height: 40),
+                        ],
+                      );
+                    }, childCount: _goals.length + 1),
+                  ),
+                ),
               ],
             ),
     );
@@ -2039,124 +2154,148 @@ class _GoalCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 14),
+        margin: const EdgeInsets.only(bottom: 16),
+        height: 110,
         decoration: BoxDecoration(
           color: style.cardBg,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(28),
           border: isRecommended
-              ? Border.all(color: AppTheme.accent, width: 2)
-              : Border.all(color: Colors.white.withOpacity(0.04), width: 1),
+              ? Border.all(color: AppTheme.accent, width: 2.5)
+              : null,
+          boxShadow: [
+            BoxShadow(
+              color: style.cardBg.withOpacity(0.45),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
+            ),
+          ],
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(28),
           child: Stack(
             children: [
+              // decorative circles
               Positioned(
-                top: -30,
-                left: -30,
+                right: -20,
+                top: -20,
                 child: Container(
-                  width: 120,
-                  height: 120,
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withOpacity(0.06),
+                  ),
+                ),
+              ),
+              Positioned(
+                right: 30,
+                bottom: -30,
+                child: Container(
+                  width: 80,
+                  height: 80,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: Colors.white.withOpacity(0.04),
                   ),
                 ),
               ),
-              Positioned(
-                left: 0,
-                top: 0,
-                bottom: 0,
-                child: Container(
-                  width: 4,
-                  decoration: BoxDecoration(
-                    color: isRecommended
-                        ? AppTheme.accent
-                        : AppTheme.accent.withOpacity(0.35),
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(24),
-                      bottomLeft: Radius.circular(24),
-                    ),
-                  ),
-                ),
-              ),
+              // content
               Padding(
-                padding: const EdgeInsets.fromLTRB(24, 18, 20, 18),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 22,
+                  vertical: 18,
+                ),
                 child: Row(
                   children: [
+                    // icon box
                     Container(
-                      width: 52,
-                      height: 52,
+                      width: 62,
+                      height: 62,
                       decoration: BoxDecoration(
                         color: style.iconBg,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: AppTheme.accent.withOpacity(0.25),
-                          width: 1,
-                        ),
+                        borderRadius: BorderRadius.circular(20),
                       ),
                       child: Icon(
                         goal["icon"] as IconData,
                         color: style.iconColor,
-                        size: 24,
+                        size: 28,
                       ),
                     ),
-                    const SizedBox(width: 16),
+                    const SizedBox(width: 18),
+                    // text
                     Expanded(
                       child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
-                            children: [
-                              Text(
-                                goal["label"] as String,
+                          if (isRecommended)
+                            Container(
+                              margin: const EdgeInsets.only(bottom: 5),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppTheme.accent,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Text(
+                                "⭐ Recommended",
                                 style: TextStyle(
-                                  color: style.titleColor,
+                                  color: Colors.white,
                                   fontFamily: 'Poppins',
+                                  fontSize: 9,
                                   fontWeight: FontWeight.w700,
-                                  fontSize: 16,
+                                  letterSpacing: 0.5,
                                 ),
                               ),
-                              if (isRecommended) ...[
-                                const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.accent,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Text(
-                                    "For you",
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontFamily: 'Poppins',
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            goal["cal"] as String,
-                            style: TextStyle(
-                              color: style.subColor,
-                              fontFamily: 'Poppins',
-                              fontSize: 13,
                             ),
+                          Text(
+                            goal["label"] as String,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontFamily: 'Poppins',
+                              fontWeight: FontWeight.w700,
+                              fontSize: 17,
+                              letterSpacing: 0.1,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.local_fire_department_rounded,
+                                color: style.iconColor,
+                                size: 13,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                goal["cal"] as String,
+                                style: TextStyle(
+                                  color: style.subColor,
+                                  fontFamily: 'Poppins',
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
                     ),
-                    Icon(
-                      Icons.chevron_right_rounded,
-                      color: style.subColor,
-                      size: 22,
+                    // arrow
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.arrow_forward_rounded,
+                        color: style.subColor,
+                        size: 18,
+                      ),
                     ),
                   ],
                 ),
