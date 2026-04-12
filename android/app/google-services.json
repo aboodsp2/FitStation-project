@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "353808707724",
+    "project_id": "fitstation-be102",
+    "storage_bucket": "fitstation-be102.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:353808707724:android:e64ff4767b13a004368ba9",
+        "android_client_info": {
+          "package_name": "com.example.fitness_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCX1oDt7vUHOwxvZPObmbpnXDZDPqsN7zg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
