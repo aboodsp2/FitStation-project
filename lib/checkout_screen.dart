@@ -630,7 +630,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'items': widget.cartItems
             .map(
               (i) => {
-                'id': i.id,
                 'name': i.name,
                 'qty': i.quantity,
                 'price': i.price,
@@ -647,10 +646,54 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           .collection('userOrders')
           .doc(orderId)
           .set(orderData);
+
+      // Also save to flat allOrders collection for admin queries
       await FirebaseFirestore.instance
           .collection('allOrders')
           .doc(orderId)
           .set(orderData);
+
+      // Save meal items to mealOrders per restaurant
+      final mealItems = widget.cartItems
+          .where((i) => i.id.startsWith('meal_'))
+          .toList();
+      if (mealItems.isNotEmpty) {
+        final Map<String, List<CartItem>> byRestaurant = {};
+        for (final item in mealItems) {
+          final parts = item.id.split('_');
+          final rId = parts.length > 1 ? parts[1] : 'unknown';
+          byRestaurant.putIfAbsent(rId, () => []).add(item);
+        }
+        for (final entry in byRestaurant.entries) {
+          final rId = entry.key;
+          final rItems = entry.value;
+          await FirebaseFirestore.instance.collection('mealOrders').add({
+            'orderId': orderId,
+            'userId': user.uid,
+            'userEmail': user.email ?? '',
+            'phone': _phoneCtrl.text.trim(),
+            'restaurantId': rId,
+            'date': Timestamp.fromDate(now),
+            'total': rItems.fold(0.0, (s, i) => s + (i.price * i.quantity)),
+            'status': 'processing',
+            'address': address,
+            'payMethod': _payMethod,
+            'seenByRestaurant': false,
+            'items': rItems
+                .map(
+                  (i) => {
+                    'name': i.name,
+                    'qty': i.quantity,
+                    'price': i.price,
+                    'imageUrl': i.imageUrl,
+                  },
+                )
+                .toList(),
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        }
+      }
+
       // Deduct stock quantities from supplements collection using a transaction
       final db = FirebaseFirestore.instance;
       await db.runTransaction((txn) async {
@@ -662,7 +705,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             final current = raw is num
                 ? raw.toInt()
                 : int.tryParse(raw?.toString() ?? '') ?? 0;
-
             final newQty = (current - cartItem.quantity).clamp(0, 99999);
             txn.update(ref, {'quantity': newQty});
           }

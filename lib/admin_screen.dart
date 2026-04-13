@@ -83,6 +83,7 @@ class _AdminScreenState extends State<AdminScreen> {
         _NavItem(Icons.dashboard_rounded, 'Dashboard'),
         _NavItem(Icons.science_rounded, 'Supplements'),
         _NavItem(Icons.receipt_long_rounded, 'Orders'),
+        _NavItem(Icons.restaurant_menu_rounded, 'Meal Plans'),
         _NavItem(Icons.video_call_rounded, 'Consults'),
         _NavItem(Icons.feedback_rounded, 'Feedback'),
       ];
@@ -100,6 +101,7 @@ class _AdminScreenState extends State<AdminScreen> {
         _SuperAdminDashboard(),
         _SupplementsTab(),
         _SupplementOrdersTab(),
+        _FitStationMealPlansTab(),
         _ConsultationsTab(),
         _FeedbackTab(),
       ];
@@ -136,6 +138,16 @@ class _AdminScreenState extends State<AdminScreen> {
               items: items,
               selected: _tab,
               onTap: (i) => setState(() => _tab = i),
+              badgeStream: widget.role.isRestaurant
+                  ? FirebaseFirestore.instance
+                        .collection('mealOrders')
+                        .where(
+                          'restaurantId',
+                          isEqualTo: widget.role.restaurantId,
+                        )
+                        .where('seenByRestaurant', isEqualTo: false)
+                        .snapshots()
+                  : null,
             ),
           ],
         ),
@@ -264,16 +276,19 @@ class _AdminBottomNav extends StatelessWidget {
   final List<_NavItem> items;
   final int selected;
   final ValueChanged<int> onTap;
+  final Stream<QuerySnapshot>? badgeStream;
   const _AdminBottomNav({
     required this.items,
     required this.selected,
     required this.onTap,
+    this.badgeStream,
   });
 
   @override
   Widget build(BuildContext context) {
+    final bottomPad = MediaQuery.of(context).padding.bottom;
     return Container(
-      padding: const EdgeInsets.only(bottom: 20, top: 10),
+      padding: EdgeInsets.only(bottom: bottomPad + 10, top: 10),
       decoration: BoxDecoration(
         color: AppTheme.surface,
         boxShadow: [
@@ -285,40 +300,98 @@ class _AdminBottomNav extends StatelessWidget {
         ],
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: List.generate(items.length, (i) {
           final sel = i == selected;
-          return GestureDetector(
-            onTap: () => onTap(i),
-            behavior: HitTestBehavior.opaque,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: sel
-                    ? AppTheme.primary.withValues(alpha: 0.1)
-                    : Colors.transparent,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    items[i].icon,
-                    color: sel ? AppTheme.primary : AppTheme.muted,
-                    size: 22,
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    items[i].label,
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      fontSize: 10,
-                      fontWeight: sel ? FontWeight.w700 : FontWeight.w400,
-                      color: sel ? AppTheme.primary : AppTheme.muted,
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => onTap(i),
+              behavior: HitTestBehavior.opaque,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                decoration: BoxDecoration(
+                  color: sel
+                      ? AppTheme.primary.withValues(alpha: 0.1)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Show badge on Meal Orders tab (index 1 for restaurant)
+                    badgeStream != null && i == 1
+                        ? StreamBuilder<QuerySnapshot>(
+                            stream: badgeStream,
+                            builder: (_, snap) {
+                              final count =
+                                  snap.data?.docs
+                                      .where(
+                                        (d) =>
+                                            (d.data()
+                                                    as Map)['seenByRestaurant'] !=
+                                                true &&
+                                            (d.data() as Map)['status'] ==
+                                                'processing',
+                                      )
+                                      .length ??
+                                  0;
+                              return Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  Icon(
+                                    items[i].icon,
+                                    color: sel
+                                        ? AppTheme.primary
+                                        : AppTheme.muted,
+                                    size: 22,
+                                  ),
+                                  if (count > 0)
+                                    Positioned(
+                                      top: -4,
+                                      right: -6,
+                                      child: Container(
+                                        width: 16,
+                                        height: 16,
+                                        decoration: const BoxDecoration(
+                                          color: Colors.red,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: Center(
+                                          child: Text(
+                                            '$count',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 9,
+                                              fontWeight: FontWeight.w800,
+                                              fontFamily: 'Poppins',
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              );
+                            },
+                          )
+                        : Icon(
+                            items[i].icon,
+                            color: sel ? AppTheme.primary : AppTheme.muted,
+                            size: 22,
+                          ),
+                    const SizedBox(height: 3),
+                    Text(
+                      items[i].label,
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 9,
+                        fontWeight: sel ? FontWeight.w700 : FontWeight.w400,
+                        color: sel ? AppTheme.primary : AppTheme.muted,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           );
@@ -2802,41 +2875,152 @@ class _MealEditCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 12),
-                // Edit button
-                SizedBox(
-                  width: double.infinity,
-                  child: GestureDetector(
-                    onTap: () => _showEditDialog(context),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      decoration: BoxDecoration(
-                        color: AppTheme.primary,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.edit_rounded,
-                            color: Colors.white,
-                            size: 16,
+                // Edit + Delete buttons
+                Row(
+                  children: [
+                    // Edit
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => _showEditDialog(context),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primary,
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                          SizedBox(width: 8),
-                          Text(
-                            'Edit Meal',
-                            style: TextStyle(
-                              fontFamily: 'Poppins',
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                            ),
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.edit_rounded,
+                                color: Colors.white,
+                                size: 16,
+                              ),
+                              SizedBox(width: 6),
+                              Text(
+                                'Edit',
+                                style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
+                    const SizedBox(width: 10),
+                    // Delete
+                    GestureDetector(
+                      onTap: () => _confirmDelete(context),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.red.withValues(alpha: 0.25),
+                          ),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(
+                              Icons.delete_outline_rounded,
+                              color: Colors.red,
+                              size: 16,
+                            ),
+                            SizedBox(width: 6),
+                            Text(
+                              'Delete',
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                color: Colors.red,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDelete(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.10),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.delete_outline_rounded,
+                color: Colors.red,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Text(
+              'Delete Meal?',
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                fontWeight: FontWeight.w700,
+                fontSize: 16,
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to delete "${data['name']}"? '
+          'This cannot be undone and the meal will be removed '
+          'from the customer menu immediately.',
+          style: AppTheme.body.copyWith(fontSize: 13, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(fontFamily: 'Poppins', color: AppTheme.muted),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: () async {
+              await docRef.delete();
+              if (context.mounted) Navigator.pop(context);
+            },
+            child: const Text(
+              'Delete',
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
@@ -2856,92 +3040,154 @@ class _MealEditCard extends StatelessWidget {
     final proteinCtrl = TextEditingController(
       text: data['protein'] as String? ?? '',
     );
+    bool isAvailable = data['available'] as bool? ?? true;
 
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          'Edit Meal',
-          style: AppTheme.subheading.copyWith(fontSize: 16),
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameCtrl,
-                decoration: AppTheme.inputDecoration(
-                  'Meal name',
-                  Icons.restaurant_menu_rounded,
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: descCtrl,
-                maxLines: 2,
-                decoration: AppTheme.inputDecoration(
-                  'Description',
-                  Icons.description_rounded,
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: priceCtrl,
-                keyboardType: TextInputType.number,
-                decoration: AppTheme.inputDecoration(
-                  'Price (\$)',
-                  Icons.attach_money_rounded,
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: kcalCtrl,
-                decoration: AppTheme.inputDecoration(
-                  'Calories',
-                  Icons.local_fire_department_rounded,
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: proteinCtrl,
-                decoration: AppTheme.inputDecoration(
-                  'Protein',
-                  Icons.fitness_center_rounded,
-                ),
-              ),
-            ],
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+          title: Text(
+            'Edit Meal',
+            style: AppTheme.subheading.copyWith(fontSize: 16),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primary,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  decoration: AppTheme.inputDecoration(
+                    'Meal name',
+                    Icons.restaurant_menu_rounded,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: descCtrl,
+                  maxLines: 2,
+                  decoration: AppTheme.inputDecoration(
+                    'Description',
+                    Icons.description_rounded,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: priceCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: AppTheme.inputDecoration(
+                    'Price (\$)',
+                    Icons.attach_money_rounded,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: kcalCtrl,
+                  decoration: AppTheme.inputDecoration(
+                    'Calories',
+                    Icons.local_fire_department_rounded,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: proteinCtrl,
+                  decoration: AppTheme.inputDecoration(
+                    'Protein',
+                    Icons.fitness_center_rounded,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                // ── Availability toggle ─────────────────────────────────
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: isAvailable
+                        ? Colors.green.withValues(alpha: 0.07)
+                        : Colors.red.withValues(alpha: 0.07),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: isAvailable
+                          ? Colors.green.withValues(alpha: 0.3)
+                          : Colors.red.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        isAvailable
+                            ? Icons.check_circle_rounded
+                            : Icons.cancel_rounded,
+                        color: isAvailable ? Colors.green : Colors.red,
+                        size: 22,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              isAvailable ? 'Available' : 'Unavailable',
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: isAvailable ? Colors.green : Colors.red,
+                              ),
+                            ),
+                            Text(
+                              isAvailable
+                                  ? 'Customers can order this meal'
+                                  : 'Hidden from customers',
+                              style: AppTheme.body.copyWith(fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Switch(
+                        value: isAvailable,
+                        onChanged: (v) => setDlgState(() => isAvailable = v),
+                        activeColor: Colors.green,
+                        inactiveThumbColor: Colors.red,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: () async {
+                await docRef.update({
+                  'name': nameCtrl.text.trim(),
+                  'description': descCtrl.text.trim(),
+                  'price':
+                      double.tryParse(priceCtrl.text.trim()) ?? data['price'],
+                  'kcal': kcalCtrl.text.trim(),
+                  'protein': proteinCtrl.text.trim(),
+                  'available': isAvailable,
+                });
+                if (context.mounted) Navigator.pop(context);
+              },
+              child: const Text(
+                'Save Changes',
+                style: TextStyle(color: Colors.white),
               ),
             ),
-            onPressed: () async {
-              await docRef.update({
-                'name': nameCtrl.text.trim(),
-                'description': descCtrl.text.trim(),
-                'price':
-                    double.tryParse(priceCtrl.text.trim()) ?? data['price'],
-                'kcal': kcalCtrl.text.trim(),
-                'protein': proteinCtrl.text.trim(),
-              });
-              if (context.mounted) Navigator.pop(context);
-            },
-            child: const Text(
-              'Save Changes',
-              style: TextStyle(color: Colors.white),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -2997,6 +3243,28 @@ class _MealOrdersTabState extends State<_MealOrdersTab> {
   String _filter = 'all';
 
   @override
+  void initState() {
+    super.initState();
+    // Mark all unseen orders as seen when restaurant opens this tab
+    _markOrdersAsSeen();
+  }
+
+  Future<void> _markOrdersAsSeen() async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('mealOrders')
+          .where('restaurantId', isEqualTo: widget.restaurantId)
+          .where('seenByRestaurant', isEqualTo: false)
+          .get();
+      final batch = FirebaseFirestore.instance.batch();
+      for (final doc in snap.docs) {
+        batch.update(doc.reference, {'seenByRestaurant': true});
+      }
+      await batch.commit();
+    } catch (_) {}
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Column(
       children: [
@@ -3023,9 +3291,1279 @@ class _MealOrdersTabState extends State<_MealOrdersTab> {
             stream: FirebaseFirestore.instance
                 .collection('mealOrders')
                 .where('restaurantId', isEqualTo: widget.restaurantId)
-                .orderBy('createdAt', descending: true)
+                .snapshots(),
+            // Note: also checks restaurantName == restaurantId as fallback
+            builder: (_, snap) {
+              if (snap.hasError)
+                return _EmptyState(label: 'Error loading orders');
+              if (!snap.hasData) {
+                return const Center(
+                  child: CircularProgressIndicator(color: AppTheme.primary),
+                );
+              }
+              // Also include docs where restaurantName == restaurantId (legacy fallback)
+              var docs = snap.data!.docs;
+              // Count new (unread) processing orders
+              final newOrders = docs.where((d) {
+                final m = d.data() as Map;
+                return m['status'] == 'processing' &&
+                    (m['seenByRestaurant'] != true);
+              }).length;
+
+              if (_filter != 'all') {
+                docs = docs
+                    .where((d) => (d.data() as Map)['status'] == _filter)
+                    .toList();
+              }
+              if (docs.isEmpty) {
+                return Column(
+                  children: [
+                    if (newOrders > 0) _NewOrderBanner(count: newOrders),
+                    Expanded(child: _EmptyState(label: 'No meal orders yet')),
+                  ],
+                );
+              }
+              return Column(
+                children: [
+                  if (newOrders > 0) _NewOrderBanner(count: newOrders),
+                  Expanded(
+                    child: ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
+                      itemCount: docs.length,
+                      itemBuilder: (_, i) {
+                        final d = docs[i];
+                        final data = d.data() as Map<String, dynamic>;
+                        return _FullOrderCard(data: data, docRef: d.reference);
+                      },
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SUPERADMIN — FITSTATION MEAL PLANS TAB
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _FitStationMealPlansTab extends StatefulWidget {
+  @override
+  State<_FitStationMealPlansTab> createState() =>
+      _FitStationMealPlansTabState();
+}
+
+class _FitStationMealPlansTabState extends State<_FitStationMealPlansTab>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabCtrl = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [AppTheme.primary, AppTheme.primaryLight],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.restaurant_menu_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'FitStation Meal Plans',
+                    style: AppTheme.heading.copyWith(fontSize: 18),
+                  ),
+                  Text(
+                    'Powered by FitStation',
+                    style: AppTheme.body.copyWith(fontSize: 11),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Container(
+            height: 44,
+            decoration: BoxDecoration(
+              color: AppTheme.divider.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(22),
+            ),
+            child: TabBar(
+              controller: _tabCtrl,
+              indicator: BoxDecoration(
+                color: AppTheme.primary,
+                borderRadius: BorderRadius.circular(22),
+              ),
+              indicatorSize: TabBarIndicatorSize.tab,
+              labelStyle: const TextStyle(
+                fontFamily: 'Poppins',
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+              unselectedLabelStyle: const TextStyle(
+                fontFamily: 'Poppins',
+                fontSize: 13,
+              ),
+              labelColor: Colors.white,
+              unselectedLabelColor: AppTheme.muted,
+              dividerColor: Colors.transparent,
+              tabs: const [
+                Tab(text: 'Plans'),
+                Tab(text: 'Orders'),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: TabBarView(
+            controller: _tabCtrl,
+            children: [_FitStationPlansTab(), _FitStationPlanOrdersTab()],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Plan cards ────────────────────────────────────────────────────────────────
+
+class _FitStationPlansTab extends StatelessWidget {
+  static const _plans = [
+    {
+      'id': 'weight_loss',
+      'label': 'Weight Loss Plan',
+      'icon': Icons.trending_down_rounded,
+      'color': Color.fromARGB(255, 65, 51, 21),
+      'kcal': '1,500 kcal/day',
+      'defaultPrice': 35.0,
+    },
+    {
+      'id': 'maintain',
+      'label': 'Maintain Weight Plan',
+      'icon': Icons.balance_rounded,
+      'color': Color.fromARGB(255, 65, 51, 21),
+      'kcal': '2,000 kcal/day',
+      'defaultPrice': 38.0,
+    },
+    {
+      'id': 'muscle_gain',
+      'label': 'Muscle Gain Plan',
+      'icon': Icons.trending_up_rounded,
+      'color': Color.fromARGB(255, 65, 51, 21),
+      'kcal': '2,800 kcal/day',
+      'defaultPrice': 48.0,
+    },
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
+      children: _plans.map((p) => _PlanAdminCard(plan: p)).toList(),
+    );
+  }
+}
+
+class _PlanAdminCard extends StatelessWidget {
+  final Map<String, dynamic> plan;
+  const _PlanAdminCard({required this.plan});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = plan['color'] as Color;
+
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('fitstation_plans')
+          .doc(plan['id'] as String)
+          .snapshots(),
+      builder: (_, snap) {
+        final data = snap.data?.data() as Map<String, dynamic>?;
+        final price = _safeDouble(data?['price'] ?? plan['defaultPrice']);
+        final kcal = data?['kcal'] as String? ?? plan['kcal'] as String;
+        final desc = data?['description'] as String? ?? '';
+        final active = data?['active'] as bool? ?? true;
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            color: AppTheme.surface,
+            border: Border.all(color: AppTheme.divider),
+            boxShadow: [
+              BoxShadow(
+                color: color.withValues(alpha: 0.10),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              // Colored header
+              Container(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(20),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Icon(
+                        plan['icon'] as IconData,
+                        color: Colors.white,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            plan['label'] as String,
+                            style: const TextStyle(
+                              fontFamily: 'Poppins',
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.local_fire_department_rounded,
+                                color: Colors.white.withValues(alpha: 0.7),
+                                size: 12,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                kcal,
+                                style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  fontSize: 12,
+                                  color: Colors.white.withValues(alpha: 0.8),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Active/Hidden toggle
+                    GestureDetector(
+                      onTap: () async {
+                        await FirebaseFirestore.instance
+                            .collection('fitstation_plans')
+                            .doc(plan['id'] as String)
+                            .set({'active': !active}, SetOptions(merge: true));
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: active
+                              ? Colors.white.withValues(alpha: 0.2)
+                              : Colors.red.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          active ? 'Active' : 'Hidden',
+                          style: const TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Price + edit
+              Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          '\$${price.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 24,
+                            fontWeight: FontWeight.w800,
+                            color: color,
+                          ),
+                        ),
+                        Text(
+                          ' / plan',
+                          style: AppTheme.body.copyWith(fontSize: 12),
+                        ),
+                      ],
+                    ),
+                    if (desc.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        desc,
+                        style: AppTheme.body.copyWith(fontSize: 12),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: GestureDetector(
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => _PlanEditScreen(
+                              plan: plan,
+                              currentPrice: price,
+                              currentKcal: kcal,
+                              currentDesc: desc,
+                            ),
+                          ),
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primary,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.edit_rounded,
+                                color: Colors.white,
+                                size: 16,
+                              ),
+                              SizedBox(width: 8),
+                              Text(
+                                'Edit Plan & Meals',
+                                style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showEditDialog(
+    BuildContext context,
+    double price,
+    String kcal,
+    String desc,
+  ) {
+    final priceCtrl = TextEditingController(text: price.toStringAsFixed(2));
+    final kcalCtrl = TextEditingController(text: kcal);
+    final descCtrl = TextEditingController(text: desc);
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Edit ${plan['label']}',
+          style: AppTheme.subheading.copyWith(fontSize: 15),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: priceCtrl,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: AppTheme.inputDecoration(
+                  'Price (\$)',
+                  Icons.attach_money_rounded,
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: kcalCtrl,
+                decoration: AppTheme.inputDecoration(
+                  'Calories/day',
+                  Icons.local_fire_department_rounded,
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: descCtrl,
+                maxLines: 3,
+                decoration: AppTheme.inputDecoration(
+                  'Description',
+                  Icons.description_rounded,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: () async {
+              await FirebaseFirestore.instance
+                  .collection('fitstation_plans')
+                  .doc(plan['id'] as String)
+                  .set({
+                    'price': double.tryParse(priceCtrl.text.trim()) ?? price,
+                    'kcal': kcalCtrl.text.trim(),
+                    'description': descCtrl.text.trim(),
+                  }, SetOptions(merge: true));
+              if (context.mounted) Navigator.pop(context);
+            },
+            child: const Text(
+              'Save',
+              style: TextStyle(color: Colors.white, fontFamily: 'Poppins'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Full Plan Edit Screen ────────────────────────────────────────────────────
+
+class _PlanEditScreen extends StatefulWidget {
+  final Map<String, dynamic> plan;
+  final double currentPrice;
+  final String currentKcal;
+  final String currentDesc;
+
+  const _PlanEditScreen({
+    required this.plan,
+    required this.currentPrice,
+    required this.currentKcal,
+    required this.currentDesc,
+  });
+
+  @override
+  State<_PlanEditScreen> createState() => _PlanEditScreenState();
+}
+
+class _PlanEditScreenState extends State<_PlanEditScreen> {
+  late final TextEditingController _priceCtrl;
+  late final TextEditingController _kcalCtrl;
+  late final TextEditingController _descCtrl;
+  bool _saving = false;
+
+  String get _planId => widget.plan['id'] as String;
+  Color get _color => widget.plan['color'] as Color;
+
+  @override
+  void initState() {
+    super.initState();
+    _priceCtrl = TextEditingController(
+      text: widget.currentPrice.toStringAsFixed(2),
+    );
+    _kcalCtrl = TextEditingController(text: widget.currentKcal);
+    _descCtrl = TextEditingController(text: widget.currentDesc);
+  }
+
+  @override
+  void dispose() {
+    _priceCtrl.dispose();
+    _kcalCtrl.dispose();
+    _descCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _savePlanDetails() async {
+    setState(() => _saving = true);
+    await FirebaseFirestore.instance
+        .collection('fitstation_plans')
+        .doc(_planId)
+        .set({
+          'price':
+              double.tryParse(_priceCtrl.text.trim()) ?? widget.currentPrice,
+          'kcal': _kcalCtrl.text.trim(),
+          'description': _descCtrl.text.trim(),
+        }, SetOptions(merge: true));
+    setState(() => _saving = false);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Plan details saved!',
+            style: TextStyle(fontFamily: 'Poppins'),
+          ),
+          backgroundColor: Colors.green.shade600,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppTheme.background,
+      appBar: AppBar(
+        backgroundColor: _color,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: Colors.white,
+          ),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          widget.plan['label'] as String,
+          style: const TextStyle(
+            fontFamily: 'Poppins',
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+            fontSize: 17,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: _saving ? null : _savePlanDetails,
+            child: _saving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
+                    ),
+                  )
+                : const Text(
+                    'Save',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
+          ),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          // ── Plan details section ─────────────────────────────────────────
+          Text(
+            'Plan Details',
+            style: AppTheme.subheading.copyWith(fontSize: 15),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _priceCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: AppTheme.inputDecoration(
+              'Price (\$)',
+              Icons.attach_money_rounded,
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _kcalCtrl,
+            decoration: AppTheme.inputDecoration(
+              'Calories/day (e.g. 1,500 kcal/day)',
+              Icons.local_fire_department_rounded,
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _descCtrl,
+            maxLines: 3,
+            decoration: AppTheme.inputDecoration(
+              'Description',
+              Icons.description_rounded,
+            ),
+          ),
+          const SizedBox(height: 6),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              onPressed: _saving ? null : _savePlanDetails,
+              child: const Text(
+                'Save Plan Details',
+                style: TextStyle(
+                  fontFamily: 'Poppins',
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 32),
+
+          // ── Meals section ────────────────────────────────────────────────
+          Row(
+            children: [
+              Text(
+                'Meals in this Plan',
+                style: AppTheme.subheading.copyWith(fontSize: 15),
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTap: () => _showAddMealDialog(context),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 7,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.add_rounded, color: Colors.white, size: 16),
+                      SizedBox(width: 4),
+                      Text(
+                        'Add Meal',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // ── Live meals stream ────────────────────────────────────────────
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('fitstation_plans')
+                .doc(_planId)
+                .collection('meals')
                 .snapshots(),
             builder: (_, snap) {
+              if (!snap.hasData) {
+                return const Center(
+                  child: CircularProgressIndicator(color: AppTheme.primary),
+                );
+              }
+              final docs = snap.data!.docs;
+              if (docs.isEmpty) {
+                return Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppTheme.divider),
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(
+                        Icons.no_food_rounded,
+                        color: AppTheme.muted.withValues(alpha: 0.4),
+                        size: 44,
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'No meals added yet',
+                        style: AppTheme.body.copyWith(fontSize: 13),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Tap "Add Meal" to get started',
+                        style: AppTheme.body.copyWith(fontSize: 11),
+                      ),
+                    ],
+                  ),
+                );
+              }
+              return Column(
+                children: docs.map((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  return _PlanMealCard(
+                    docRef: doc.reference,
+                    data: data,
+                    accentColor: _color,
+                  );
+                }).toList(),
+              );
+            },
+          ),
+          const SizedBox(height: 60),
+        ],
+      ),
+    );
+  }
+
+  void _showAddMealDialog(BuildContext context) {
+    final nameCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    final sectionCtrl = TextEditingController(text: 'BREAKFAST');
+    final kcalCtrl = TextEditingController();
+    final proteinCtrl = TextEditingController();
+    final carbsCtrl = TextEditingController();
+    final fatCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Add Meal to ${widget.plan['label']}',
+          style: AppTheme.subheading.copyWith(fontSize: 14),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: sectionCtrl,
+                decoration: AppTheme.inputDecoration(
+                  'Section (BREAKFAST / LUNCH / DINNER)',
+                  Icons.schedule_rounded,
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: nameCtrl,
+                decoration: AppTheme.inputDecoration(
+                  'Meal name *',
+                  Icons.restaurant_menu_rounded,
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: descCtrl,
+                maxLines: 2,
+                decoration: AppTheme.inputDecoration(
+                  'Description',
+                  Icons.description_rounded,
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: kcalCtrl,
+                decoration: AppTheme.inputDecoration(
+                  'Calories (e.g. 450 kcal)',
+                  Icons.local_fire_department_rounded,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: proteinCtrl,
+                      decoration: AppTheme.inputDecoration(
+                        'Protein',
+                        Icons.fitness_center_rounded,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: carbsCtrl,
+                      decoration: AppTheme.inputDecoration(
+                        'Carbs',
+                        Icons.grain_rounded,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: fatCtrl,
+                      decoration: AppTheme.inputDecoration(
+                        'Fat',
+                        Icons.opacity_rounded,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: () async {
+              final name = nameCtrl.text.trim();
+              if (name.isEmpty) return;
+              await FirebaseFirestore.instance
+                  .collection('fitstation_plans')
+                  .doc(_planId)
+                  .collection('meals')
+                  .add({
+                    'section': sectionCtrl.text.trim().toUpperCase(),
+                    'name': name,
+                    'desc': descCtrl.text.trim(),
+                    'kcal': kcalCtrl.text.trim(),
+                    'protein': proteinCtrl.text.trim(),
+                    'carbs': carbsCtrl.text.trim(),
+                    'fat': fatCtrl.text.trim(),
+                    'createdAt': FieldValue.serverTimestamp(),
+                  });
+              if (context.mounted) Navigator.pop(context);
+            },
+            child: const Text(
+              'Add Meal',
+              style: TextStyle(color: Colors.white, fontFamily: 'Poppins'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Plan Meal Card ─────────────────────────────────────────────────────────────
+
+class _PlanMealCard extends StatelessWidget {
+  final DocumentReference docRef;
+  final Map<String, dynamic> data;
+  final Color accentColor;
+  const _PlanMealCard({
+    required this.docRef,
+    required this.data,
+    required this.accentColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final section = data['section'] as String? ?? '';
+    final name = data['name'] as String? ?? '—';
+    final desc = data['desc'] as String? ?? '';
+    final kcal = data['kcal'] as String? ?? '';
+    final protein = data['protein'] as String? ?? '';
+    final carbs = data['carbs'] as String? ?? '';
+    final fat = data['fat'] as String? ?? '';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: AppTheme.card(radius: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Section badge + actions
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+            child: Row(
+              children: [
+                if (section.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: accentColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      section,
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: accentColor,
+                      ),
+                    ),
+                  ),
+                const Spacer(),
+                // Edit
+                GestureDetector(
+                  onTap: () => _showEditDialog(context),
+                  child: Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.edit_rounded,
+                      color: AppTheme.primary,
+                      size: 15,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // Delete
+                GestureDetector(
+                  onTap: () => _confirmDelete(context),
+                  child: Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.delete_outline_rounded,
+                      color: Colors.red,
+                      size: 15,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(name, style: AppTheme.subheading.copyWith(fontSize: 14)),
+                if (desc.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    desc,
+                    style: AppTheme.body.copyWith(fontSize: 11),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    if (kcal.isNotEmpty)
+                      _MacroChip(
+                        Icons.local_fire_department_rounded,
+                        kcal,
+                        Colors.orange,
+                      ),
+                    if (protein.isNotEmpty)
+                      _MacroChip(
+                        Icons.fitness_center_rounded,
+                        protein,
+                        Colors.blue,
+                      ),
+                    if (carbs.isNotEmpty)
+                      _MacroChip(
+                        Icons.grain_rounded,
+                        carbs,
+                        Colors.amber.shade700,
+                      ),
+                    if (fat.isNotEmpty)
+                      _MacroChip(Icons.opacity_rounded, fat, Colors.purple),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showEditDialog(BuildContext context) {
+    final nameCtrl = TextEditingController(text: data['name'] ?? '');
+    final descCtrl = TextEditingController(text: data['desc'] ?? '');
+    final sectionCtrl = TextEditingController(text: data['section'] ?? '');
+    final kcalCtrl = TextEditingController(text: data['kcal'] ?? '');
+    final proteinCtrl = TextEditingController(text: data['protein'] ?? '');
+    final carbsCtrl = TextEditingController(text: data['carbs'] ?? '');
+    final fatCtrl = TextEditingController(text: data['fat'] ?? '');
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Edit Meal',
+          style: AppTheme.subheading.copyWith(fontSize: 15),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: sectionCtrl,
+                decoration: AppTheme.inputDecoration(
+                  'Section',
+                  Icons.schedule_rounded,
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: nameCtrl,
+                decoration: AppTheme.inputDecoration(
+                  'Name',
+                  Icons.restaurant_menu_rounded,
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: descCtrl,
+                maxLines: 2,
+                decoration: AppTheme.inputDecoration(
+                  'Description',
+                  Icons.description_rounded,
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: kcalCtrl,
+                decoration: AppTheme.inputDecoration(
+                  'Calories',
+                  Icons.local_fire_department_rounded,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: proteinCtrl,
+                      decoration: AppTheme.inputDecoration(
+                        'Protein',
+                        Icons.fitness_center_rounded,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: carbsCtrl,
+                      decoration: AppTheme.inputDecoration(
+                        'Carbs',
+                        Icons.grain_rounded,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: fatCtrl,
+                      decoration: AppTheme.inputDecoration(
+                        'Fat',
+                        Icons.opacity_rounded,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: () async {
+              await docRef.update({
+                'section': sectionCtrl.text.trim().toUpperCase(),
+                'name': nameCtrl.text.trim(),
+                'desc': descCtrl.text.trim(),
+                'kcal': kcalCtrl.text.trim(),
+                'protein': proteinCtrl.text.trim(),
+                'carbs': carbsCtrl.text.trim(),
+                'fat': fatCtrl.text.trim(),
+              });
+              if (context.mounted) Navigator.pop(context);
+            },
+            child: const Text(
+              'Save Changes',
+              style: TextStyle(color: Colors.white, fontFamily: 'Poppins'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDelete(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          'Delete Meal?',
+          style: TextStyle(
+            fontFamily: 'Poppins',
+            fontWeight: FontWeight.w700,
+            fontSize: 16,
+          ),
+        ),
+        content: Text(
+          'Remove "${data['name']}" from this plan?',
+          style: AppTheme.body.copyWith(fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: () async {
+              await docRef.delete();
+              if (context.mounted) Navigator.pop(context);
+            },
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: Colors.white, fontFamily: 'Poppins'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── FitStation Plan Orders ────────────────────────────────────────────────────
+
+class _FitStationPlanOrdersTab extends StatefulWidget {
+  @override
+  State<_FitStationPlanOrdersTab> createState() =>
+      _FitStationPlanOrdersTabState();
+}
+
+class _FitStationPlanOrdersTabState extends State<_FitStationPlanOrdersTab> {
+  String _filter = 'all';
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+          child: _StatusFilter(
+            selected: _filter,
+            onChanged: (v) => setState(() => _filter = v),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('mealOrders')
+                .where(
+                  'restaurantId',
+                  whereIn: [
+                    'fitstation_Weight Loss Plan',
+                    'fitstation_Maintain Weight Plan',
+                    'fitstation_Muscle Gain Plan',
+                    'fitstation_Weight Loss',
+                    'fitstation_Maintain',
+                    'fitstation_Muscle Gain',
+                  ],
+                )
+                .snapshots(),
+            builder: (_, snap) {
+              if (snap.hasError) {
+                return _EmptyState(label: 'Error loading plan orders');
+              }
               if (!snap.hasData) {
                 return const Center(
                   child: CircularProgressIndicator(color: AppTheme.primary),
@@ -3038,7 +4576,7 @@ class _MealOrdersTabState extends State<_MealOrdersTab> {
                     .toList();
               }
               if (docs.isEmpty) {
-                return _EmptyState(label: 'No meal orders yet');
+                return _EmptyState(label: 'No FitStation plan orders yet');
               }
               return ListView.builder(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
@@ -3046,7 +4584,7 @@ class _MealOrdersTabState extends State<_MealOrdersTab> {
                 itemBuilder: (_, i) {
                   final d = docs[i];
                   final data = d.data() as Map<String, dynamic>;
-                  return _FullOrderCard(data: data, docRef: d.reference);
+                  return _FitStationOrderCard(data: data, docRef: d.reference);
                 },
               );
             },
@@ -3057,9 +4595,233 @@ class _MealOrdersTabState extends State<_MealOrdersTab> {
   }
 }
 
+class _FitStationOrderCard extends StatelessWidget {
+  final Map<String, dynamic> data;
+  final DocumentReference docRef;
+  const _FitStationOrderCard({required this.data, required this.docRef});
+
+  @override
+  Widget build(BuildContext context) {
+    final status = data['status'] as String? ?? 'processing';
+    final rId = data['restaurantId'] as String? ?? '';
+    String planLabel = 'FitStation Plan';
+    if (rId.contains('Weight Loss')) planLabel = '⬇ Weight Loss Plan';
+    if (rId.contains('Maintain')) planLabel = '⚖ Maintain Weight Plan';
+    if (rId.contains('Muscle')) planLabel = '💪 Muscle Gain Plan';
+
+    final date = (data['date'] as Timestamp?)?.toDate();
+    final items = (data['items'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: AppTheme.card(radius: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withValues(alpha: 0.06),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(18),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.restaurant_menu_rounded,
+                  color: AppTheme.primary,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    planLabel,
+                    style: AppTheme.subheading.copyWith(
+                      fontSize: 13,
+                      color: AppTheme.primary,
+                    ),
+                  ),
+                ),
+                _StatusDropdown(
+                  status: status,
+                  onChanged: (newStatus) async {
+                    await docRef.update({'status': newStatus});
+                    final userId = data['userId'] as String? ?? '';
+                    final orderId = data['orderId'] as String? ?? '';
+                    if (userId.isNotEmpty && orderId.isNotEmpty) {
+                      await FirebaseFirestore.instance
+                          .collection('orders')
+                          .doc(userId)
+                          .collection('userOrders')
+                          .doc(orderId)
+                          .update({'status': newStatus});
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  data['userEmail'] as String? ?? '—',
+                  style: AppTheme.subheading.copyWith(fontSize: 13),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  date != null
+                      ? '${date.day}/${date.month}/${date.year}  ${date.hour}:${date.minute.toString().padLeft(2, '0')}'
+                      : '—',
+                  style: AppTheme.body.copyWith(fontSize: 11),
+                ),
+                if (items.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  ...items.map(
+                    (item) => Padding(
+                      padding: const EdgeInsets.only(bottom: 3),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.restaurant_menu_rounded,
+                            color: AppTheme.accent,
+                            size: 12,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              '${item['name']} × ${item['qty']}',
+                              style: AppTheme.body.copyWith(fontSize: 12),
+                            ),
+                          ),
+                          Text(
+                            '\$${_safeDouble(item['price']).toStringAsFixed(2)}',
+                            style: AppTheme.body.copyWith(fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    if ((data['address'] as String? ?? '').isNotEmpty)
+                      Expanded(
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.location_on_rounded,
+                              color: AppTheme.muted,
+                              size: 12,
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                data['address'] as String,
+                                style: AppTheme.body.copyWith(fontSize: 11),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    Text(
+                      '\$${_safeDouble(data['total']).toStringAsFixed(2)}',
+                      style: AppTheme.subheading.copyWith(
+                        fontSize: 15,
+                        color: AppTheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // SHARED UTILITY WIDGETS
 // ═══════════════════════════════════════════════════════════════════════════════
+
+class _NewOrderBanner extends StatelessWidget {
+  final int count;
+  const _NewOrderBanner({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFFF6B35), Color(0xFFFF8C42)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.orange.withValues(alpha: 0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.2),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.notifications_active_rounded,
+              color: Colors.white,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$count new order${count == 1 ? '' : 's'}!',
+                  style: const TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+                Text(
+                  'Tap an order to review and update status',
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 11,
+                    color: Colors.white.withValues(alpha: 0.85),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _EmptyState extends StatelessWidget {
   final String label;

@@ -525,7 +525,16 @@ final List<_Restaurant> _restaurants = [
 // FIRESTORE HELPER
 // ═══════════════════════════════════════════════════════════════════════════
 
-Future<Map<String, String>> _fetchMealAssets(String restaurantId) async {
+double _safeFirestoreDouble(dynamic v) {
+  if (v == null) return 0.0;
+  if (v is num) return v.toDouble();
+  return double.tryParse(v.toString()) ?? 0.0;
+}
+
+// Returns map of docId -> {mealAsset, available, name}
+Future<Map<String, Map<String, dynamic>>> _fetchMealData(
+  String restaurantId,
+) async {
   final snap = await FirebaseFirestore.instance
       .collection('resturants')
       .doc(restaurantId)
@@ -533,8 +542,31 @@ Future<Map<String, String>> _fetchMealAssets(String restaurantId) async {
       .get();
   return {
     for (final doc in snap.docs)
-      doc.id: (doc.data()['mealAsset'] as String? ?? ''),
+      doc.id: {
+        'mealAsset': doc.data()['mealAsset'] as String? ?? '',
+        'available': doc.data()['available'] as bool? ?? true,
+        'name': doc.data()['name'] as String? ?? '',
+      },
   };
+}
+
+// Legacy wrapper for asset-only fetch
+Future<Map<String, String>> _fetchMealAssets(String restaurantId) async {
+  final data = await _fetchMealData(restaurantId);
+  return data.map((k, v) => MapEntry(k, v['mealAsset'] as String? ?? ''));
+}
+
+// Map of meal name -> available (for quick lookup)
+Map<String, bool> _buildAvailabilityMap(
+  Map<String, Map<String, dynamic>> data,
+) {
+  final result = <String, bool>{};
+  for (final v in data.values) {
+    final name = v['name'] as String? ?? '';
+    final available = v['available'] as bool? ?? true;
+    if (name.isNotEmpty) result[name] = available;
+  }
+  return result;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -544,7 +576,14 @@ Future<Map<String, String>> _fetchMealAssets(String restaurantId) async {
 class _MealDetailSheet extends StatefulWidget {
   final _RestaurantMeal meal;
   final String restaurantName;
-  const _MealDetailSheet({required this.meal, required this.restaurantName});
+  final String restaurantId;
+  final bool isAvailable;
+  const _MealDetailSheet({
+    required this.meal,
+    required this.restaurantName,
+    required this.restaurantId,
+    this.isAvailable = true,
+  });
 
   @override
   State<_MealDetailSheet> createState() => _MealDetailSheetState();
@@ -557,7 +596,7 @@ class _MealDetailSheetState extends State<_MealDetailSheet> {
     for (int i = 0; i < _qty; i++) {
       MealCartManager().addItem(
         CartItem(
-          id: 'meal_${widget.restaurantName}_${widget.meal.name}',
+          id: 'meal_${widget.restaurantId}_${widget.meal.name}',
           name: '${widget.meal.name} — ${widget.restaurantName}',
           price: widget.meal.price,
           quantity: 1,
@@ -758,16 +797,22 @@ class _MealDetailSheetState extends State<_MealDetailSheet> {
                           height: 52,
                           child: ElevatedButton(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: AppTheme.primary,
+                              backgroundColor: widget.isAvailable
+                                  ? AppTheme.primary
+                                  : Colors.grey.shade400,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(18),
                               ),
-                              elevation: 4,
+                              elevation: widget.isAvailable ? 4 : 0,
                               shadowColor: AppTheme.primary.withOpacity(0.35),
                             ),
-                            onPressed: () => _addToCart(context),
+                            onPressed: widget.isAvailable
+                                ? () => _addToCart(context)
+                                : null,
                             child: Text(
-                              'Add $_qty to Cart',
+                              widget.isAvailable
+                                  ? 'Add $_qty to Cart'
+                                  : 'Currently Unavailable',
                               style: const TextStyle(
                                 fontFamily: 'Poppins',
                                 color: Colors.white,
@@ -1222,195 +1267,250 @@ class _RestaurantDetailScreen extends StatefulWidget {
 }
 
 class _RestaurantDetailScreenState extends State<_RestaurantDetailScreen> {
-  late Future<_Restaurant> _restaurantWithImages;
+  // Stream meals live from Firestore so admin-added/edited meals show instantly
+  late final Stream<QuerySnapshot> _mealsStream;
 
   @override
   void initState() {
     super.initState();
-    _restaurantWithImages = _fetchMealAssets(
-      widget.restaurant.id,
-    ).then((assetMap) => widget.restaurant.withFirestoreMeals(assetMap));
+    _mealsStream = FirebaseFirestore.instance
+        .collection('resturants')
+        .doc(widget.restaurant.id)
+        .collection('meals')
+        .snapshots();
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<_Restaurant>(
-      future: _restaurantWithImages,
-      builder: (context, snapshot) {
-        final restaurant = snapshot.data ?? widget.restaurant;
-        final isLoading = snapshot.connectionState == ConnectionState.waiting;
+    final restaurant = widget.restaurant;
 
-        return Scaffold(
-          backgroundColor: AppTheme.background,
-          body: CustomScrollView(
-            slivers: [
-              // ── Hero ──────────────────────────────────────────────────
-              SliverAppBar(
-                expandedHeight: 240,
-                pinned: true,
-                backgroundColor: restaurant.brandColor,
-                leading: IconButton(
-                  icon: const Icon(
-                    Icons.arrow_back_ios_new_rounded,
-                    color: Colors.white,
-                  ),
-                  onPressed: () => Navigator.pop(context),
-                ),
-                actions: [
-                  Padding(
-                    padding: const EdgeInsets.only(right: 12),
-                    child: const MealCartBadge(),
-                  ),
-                ],
-                flexibleSpace: FlexibleSpaceBar(
-                  background: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              restaurant.brandColor,
-                              restaurant.brandColor.withOpacity(0.7),
-                            ],
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                          ),
-                        ),
-                      ),
-                      Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 90,
-                              height: 90,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: Colors.white,
-                                border: Border.all(
-                                  color: Colors.white.withOpacity(0.4),
-                                  width: 2,
-                                ),
-                              ),
-                              child: ClipOval(
-                                child: restaurant.logoAsset.isNotEmpty
-                                    ? Image.asset(
-                                        restaurant.logoAsset,
-                                        width: 90,
-                                        height: 90,
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) => Icon(
-                                          restaurant.icon,
-                                          color: restaurant.brandColor,
-                                          size: 42,
-                                        ),
-                                      )
-                                    : Icon(
-                                        restaurant.icon,
-                                        color: restaurant.brandColor,
-                                        size: 42,
-                                      ),
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              restaurant.name,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontFamily: 'Poppins',
-                                fontSize: 20,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              restaurant.cuisine,
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(0.7),
-                                fontFamily: 'Poppins',
-                                fontSize: 13,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Positioned(
-                        bottom: 0,
-                        left: 0,
-                        right: 0,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 40,
-                            vertical: 12,
-                          ),
-                          color: Colors.black.withOpacity(0.3),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceAround,
-                            children: [
-                              _chip(
-                                Icons.star_rounded,
-                                restaurant.rating.toStringAsFixed(1),
-                                'Rating',
-                              ),
-                              Container(
-                                width: 1,
-                                height: 28,
-                                color: Colors.white.withOpacity(0.2),
-                              ),
-                              _chip(
-                                Icons.access_time_rounded,
-                                restaurant.deliveryTime,
-                                'Delivery',
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+    return Scaffold(
+      backgroundColor: AppTheme.background,
+      body: CustomScrollView(
+        slivers: [
+          // ── Hero ──────────────────────────────────────────────────────
+          SliverAppBar(
+            expandedHeight: 240,
+            pinned: true,
+            backgroundColor: restaurant.brandColor,
+            leading: IconButton(
+              icon: const Icon(
+                Icons.arrow_back_ios_new_rounded,
+                color: Colors.white,
               ),
-
-              // ── Section title ─────────────────────────────────────────
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 22, 20, 4),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Menu',
-                        style: AppTheme.heading.copyWith(fontSize: 20),
-                      ),
-                      Text(
-                        'Tap any meal to view details',
-                        style: AppTheme.body.copyWith(fontSize: 13),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // ── Meal cards ────────────────────────────────────────────
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 48),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, i) => _MealRowCard(
-                      meal: restaurant.meals[i],
-                      restaurantName: restaurant.name,
-                      isLoading: isLoading,
-                    ),
-                    childCount: restaurant.meals.length,
-                  ),
-                ),
+              onPressed: () => Navigator.pop(context),
+            ),
+            actions: [
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: const MealCartBadge(),
               ),
             ],
+            flexibleSpace: FlexibleSpaceBar(
+              background: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          restaurant.brandColor,
+                          restaurant.brandColor.withOpacity(0.7),
+                        ],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
+                    ),
+                  ),
+                  Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 90,
+                          height: 90,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white,
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.4),
+                              width: 2,
+                            ),
+                          ),
+                          child: ClipOval(
+                            child: restaurant.logoAsset.isNotEmpty
+                                ? Image.asset(
+                                    restaurant.logoAsset,
+                                    width: 90,
+                                    height: 90,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Icon(
+                                      restaurant.icon,
+                                      color: restaurant.brandColor,
+                                      size: 42,
+                                    ),
+                                  )
+                                : Icon(
+                                    restaurant.icon,
+                                    color: restaurant.brandColor,
+                                    size: 42,
+                                  ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          restaurant.name,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontFamily: 'Poppins',
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          restaurant.cuisine,
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.7),
+                            fontFamily: 'Poppins',
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 40,
+                        vertical: 12,
+                      ),
+                      color: Colors.black.withOpacity(0.3),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _chip(
+                            Icons.star_rounded,
+                            restaurant.rating.toStringAsFixed(1),
+                            'Rating',
+                          ),
+                          Container(
+                            width: 1,
+                            height: 28,
+                            color: Colors.white.withOpacity(0.2),
+                          ),
+                          _chip(
+                            Icons.access_time_rounded,
+                            restaurant.deliveryTime,
+                            'Delivery',
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-        );
-      },
+
+          // ── Section title ──────────────────────────────────────────────
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 22, 20, 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Menu', style: AppTheme.heading.copyWith(fontSize: 20)),
+                  Text(
+                    'Tap any meal to view details',
+                    style: AppTheme.body.copyWith(fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // ── Meals — live from Firestore ────────────────────────────────
+          SliverToBoxAdapter(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: _mealsStream,
+              builder: (context, snap) {
+                if (!snap.hasData) {
+                  return const Padding(
+                    padding: EdgeInsets.all(40),
+                    child: Center(
+                      child: CircularProgressIndicator(color: AppTheme.accent),
+                    ),
+                  );
+                }
+                final docs = snap.data!.docs;
+                if (docs.isEmpty) {
+                  return Padding(
+                    padding: const EdgeInsets.all(40),
+                    child: Center(
+                      child: Text(
+                        'No meals available yet',
+                        style: AppTheme.body,
+                      ),
+                    ),
+                  );
+                }
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 48),
+                  child: Column(
+                    children: docs.map((doc) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      final name = data['name'] as String? ?? '';
+                      final desc = data['description'] as String? ?? '';
+                      final price = _safeFirestoreDouble(data['price']);
+                      final kcal = data['kcal'] as String? ?? '';
+                      final protein = data['protein'] as String? ?? '';
+                      final mealAsset = data['mealAsset'] as String? ?? '';
+                      final available = data['available'] as bool? ?? true;
+
+                      // Match static tag data if available
+                      final staticMeal = _findStaticMeal(restaurant, name);
+
+                      final meal = _RestaurantMeal(
+                        name: name,
+                        description: desc,
+                        price: price,
+                        kcal: kcal,
+                        protein: protein,
+                        tag: staticMeal?.tag ?? '',
+                        tagColor: staticMeal?.tagColor ?? restaurant.brandColor,
+                        tagIcon:
+                            staticMeal?.tagIcon ?? Icons.restaurant_rounded,
+                        mealAsset: mealAsset,
+                      );
+
+                      return _MealRowCard(
+                        meal: meal,
+                        restaurantName: restaurant.name,
+                        restaurantId: restaurant.id,
+                        isAvailable: available,
+                      );
+                    }).toList(),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
+  }
+
+  // Helper: find matching static meal for tag/color data
+  _RestaurantMeal? _findStaticMeal(_Restaurant r, String name) {
+    try {
+      return r.meals.firstWhere((m) => m.name == name);
+    } catch (_) {
+      return null;
+    }
   }
 
   Widget _chip(IconData icon, String value, String label) => Column(
@@ -1448,12 +1548,16 @@ class _RestaurantDetailScreenState extends State<_RestaurantDetailScreen> {
 class _MealRowCard extends StatelessWidget {
   final _RestaurantMeal meal;
   final String restaurantName;
+  final String restaurantId;
   final bool isLoading;
+  final bool isAvailable;
 
   const _MealRowCard({
     required this.meal,
     required this.restaurantName,
+    required this.restaurantId,
     this.isLoading = false,
+    this.isAvailable = true,
   });
 
   // Opens the detail bottom sheet (no cart action)
@@ -1462,8 +1566,12 @@ class _MealRowCard extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) =>
-          _MealDetailSheet(meal: meal, restaurantName: restaurantName),
+      builder: (_) => _MealDetailSheet(
+        meal: meal,
+        restaurantName: restaurantName,
+        restaurantId: restaurantId,
+        isAvailable: isAvailable,
+      ),
     );
   }
 
@@ -1471,7 +1579,7 @@ class _MealRowCard extends StatelessWidget {
   void _addToCartDirect(BuildContext context) {
     MealCartManager().addItem(
       CartItem(
-        id: 'meal_${restaurantName}_${meal.name}',
+        id: 'meal_${restaurantId}_${meal.name}',
         name: '${meal.name} — $restaurantName',
         price: meal.price,
         quantity: 1,
@@ -1500,119 +1608,200 @@ class _MealRowCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      // Tap the card → open detail sheet
-      onTap: () => _openDetail(context),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        decoration: BoxDecoration(
-          color: AppTheme.surface,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: AppTheme.divider),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // ── Meal image ───────────────────────────────────────────────
-            ClipRRect(
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(18),
-                bottomLeft: Radius.circular(18),
-              ),
-              child: _buildMealImage(),
+      onTap: isAvailable ? () => _openDetail(context) : null,
+      child: Opacity(
+        opacity: isAvailable ? 1.0 : 0.55,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: AppTheme.surface,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: isAvailable
+                  ? AppTheme.divider
+                  : Colors.red.withOpacity(0.25),
             ),
-
-            // ── Info ─────────────────────────────────────────────────────
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      meal.name,
-                      style: AppTheme.subheading.copyWith(fontSize: 14),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // ── Meal image ─────────────────────────────────────────────
+              Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(18),
+                      bottomLeft: Radius.circular(18),
                     ),
-                    const SizedBox(height: 3),
-                    Text(
-                      meal.description,
-                      style: AppTheme.body.copyWith(fontSize: 11),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
-                      children: [
-                        _tagChip(meal.tag, meal.tagColor, meal.tagIcon),
-                        _macroChip('🔥 ${meal.kcal}'),
-                        _macroChip('💪 ${meal.protein}'),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        RichText(
-                          text: TextSpan(
-                            children: [
-                              TextSpan(
-                                text: '\$${meal.price.toStringAsFixed(2)}',
-                                style: AppTheme.subheading.copyWith(
-                                  fontSize: 16,
-                                  color: AppTheme.dark,
-                                ),
-                              ),
-                              TextSpan(
-                                text: ' / meal',
-                                style: AppTheme.label.copyWith(fontSize: 11),
-                              ),
-                            ],
+                    child: _buildMealImage(),
+                  ),
+                  // Unavailable overlay on image
+                  if (!isAvailable)
+                    Positioned.fill(
+                      child: ClipRRect(
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(18),
+                          bottomLeft: Radius.circular(18),
+                        ),
+                        child: Container(
+                          color: Colors.black.withOpacity(0.45),
+                          child: const Center(
+                            child: Icon(
+                              Icons.block_rounded,
+                              color: Colors.white,
+                              size: 28,
+                            ),
                           ),
                         ),
-                        const Spacer(),
-                        // ── "Add to Cart" button — stops propagation ───────
-                        GestureDetector(
-                          onTap: () => _addToCartDirect(context),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 7,
+                      ),
+                    ),
+                ],
+              ),
+
+              // ── Info ───────────────────────────────────────────────────
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              meal.name,
+                              style: AppTheme.subheading.copyWith(fontSize: 14),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            decoration: BoxDecoration(
-                              color: AppTheme.primary,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.add_shopping_cart_rounded,
-                                  color: Colors.white,
-                                  size: 14,
+                          ),
+                          if (!isAvailable)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.red.withOpacity(0.10),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: Colors.red.withOpacity(0.3),
                                 ),
-                                SizedBox(width: 5),
-                                Text(
-                                  'Add to Cart',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontFamily: 'Poppins',
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 11,
+                              ),
+                              child: const Text(
+                                'Unavailable',
+                                style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.red,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        meal.description,
+                        style: AppTheme.body.copyWith(fontSize: 11),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          _tagChip(meal.tag, meal.tagColor, meal.tagIcon),
+                          _macroChip('🔥 ${meal.kcal}'),
+                          _macroChip('💪 ${meal.protein}'),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          RichText(
+                            text: TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: '\$${meal.price.toStringAsFixed(2)}',
+                                  style: AppTheme.subheading.copyWith(
+                                    fontSize: 16,
+                                    color: isAvailable
+                                        ? AppTheme.dark
+                                        : AppTheme.muted,
                                   ),
+                                ),
+                                TextSpan(
+                                  text: ' / meal',
+                                  style: AppTheme.label.copyWith(fontSize: 11),
                                 ),
                               ],
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                          const Spacer(),
+                          // Cart button or unavailable message
+                          isAvailable
+                              ? GestureDetector(
+                                  onTap: () => _addToCartDirect(context),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 7,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.primary,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.add_shopping_cart_rounded,
+                                          color: Colors.white,
+                                          size: 14,
+                                        ),
+                                        SizedBox(width: 5),
+                                        Text(
+                                          'Add to Cart',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontFamily: 'Poppins',
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                )
+                              : Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 7,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.withOpacity(0.12),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Text(
+                                    'Not available',
+                                    style: TextStyle(
+                                      fontFamily: 'Poppins',
+                                      fontSize: 11,
+                                      color: Colors.grey,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -2369,7 +2558,7 @@ class _ExploreRestaurantsCard extends StatelessWidget {
 }
 
 // ── Meal Detail Screen (goal-based plans) ─────────────────────────────────────
-class _MealDetailScreen extends StatelessWidget {
+class _MealDetailScreen extends StatefulWidget {
   final String goalLabel;
   final _GoalStyle goalStyle;
   final String goalCal;
@@ -2379,6 +2568,15 @@ class _MealDetailScreen extends StatelessWidget {
     required this.goalStyle,
     required this.goalCal,
   });
+
+  @override
+  State<_MealDetailScreen> createState() => _MealDetailScreenState();
+}
+
+class _MealDetailScreenState extends State<_MealDetailScreen> {
+  String get goalLabel => widget.goalLabel;
+  _GoalStyle get goalStyle => widget.goalStyle;
+  String get goalCal => widget.goalCal;
 
   static const Map<String, List<Map<String, dynamic>>> _sections = {
     "Weight Loss": [
@@ -2720,6 +2918,12 @@ class _MealDetailScreen extends StatelessWidget {
     return 48.0;
   }
 
+  String get _firestorePlanId {
+    if (goalLabel.contains('Weight Loss')) return 'weight_loss';
+    if (goalLabel.contains('Maintain')) return 'maintain';
+    return 'muscle_gain';
+  }
+
   @override
   Widget build(BuildContext context) {
     String _sectionKey;
@@ -2730,7 +2934,8 @@ class _MealDetailScreen extends StatelessWidget {
     } else {
       _sectionKey = 'Muscle Gain';
     }
-    final sections = _sections[_sectionKey] ?? [];
+    // Access static sections map from parent widget class
+    final staticSections = _sections[_sectionKey] ?? [];
     return Scaffold(
       backgroundColor: AppTheme.background,
       body: CustomScrollView(
@@ -2872,21 +3077,83 @@ class _MealDetailScreen extends StatelessWidget {
               ),
             ),
           ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate((context, index) {
-                if (index < sections.length) {
-                  final s = sections[index];
-                  return _SectionBlock(
-                    title: s["section"] as String,
-                    items: s["items"] as List<Map<String, dynamic>>,
-                    accentColor: goalStyle.iconColor,
-                    headerColor: goalStyle.cardBg,
-                  );
+          SliverToBoxAdapter(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('fitstation_plans')
+                  .doc(_firestorePlanId)
+                  .collection('meals')
+                  .snapshots(),
+              builder: (_, snap) {
+                // Start with a deep copy of static sections as a mutable list
+                final mergedSections = staticSections
+                    .map(
+                      (s) => {
+                        'section': s['section'] as String,
+                        'items': List<Map<String, dynamic>>.from(
+                          (s['items'] as List).map(
+                            (i) => Map<String, dynamic>.from(i as Map),
+                          ),
+                        ),
+                      },
+                    )
+                    .toList();
+
+                // Merge admin-added meals into existing sections or create new ones
+                if (snap.hasData) {
+                  for (final doc in snap.data!.docs) {
+                    final d = doc.data() as Map<String, dynamic>;
+                    final sec = (d['section'] as String? ?? 'OTHER')
+                        .toUpperCase();
+                    final adminMeal = {
+                      'name': d['name'] ?? '',
+                      'asset': '',
+                      'desc': d['desc'] ?? '',
+                      'kcal': d['kcal'] ?? '',
+                      'protein': d['protein'] ?? '',
+                      'carbs': d['carbs'] ?? '',
+                      'fat': d['fat'] ?? '',
+                    };
+
+                    // Find existing section with same name
+                    final existing = mergedSections
+                        .where((s) => s['section'] == sec)
+                        .toList();
+
+                    if (existing.isNotEmpty) {
+                      // Add to existing section
+                      (existing.first['items'] as List<Map<String, dynamic>>)
+                          .add(adminMeal);
+                    } else {
+                      // Create new section only if truly different
+                      mergedSections.add({
+                        'section': sec,
+                        'items': [adminMeal],
+                      });
+                    }
+                  }
                 }
-                return _AddToCartBtn(goalLabel: goalLabel, price: _price);
-              }, childCount: sections.length + 1),
+
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: Column(
+                    children: [
+                      // ── All merged sections ───────────────────────────
+                      ...mergedSections.map(
+                        (s) => _SectionBlock(
+                          title: s['section'] as String,
+                          items: s['items'] as List<Map<String, dynamic>>,
+                          accentColor: goalStyle.iconColor,
+                          headerColor: goalStyle.cardBg,
+                        ),
+                      ),
+                      // ── Add to Cart ───────────────────────────────────
+                      _AddToCartBtn(goalLabel: goalLabel, price: _price),
+                      const SizedBox(height: 40),
+                    ],
+                  ),
+                );
+              },
             ),
           ),
         ],
@@ -2900,12 +3167,14 @@ class _SectionBlock extends StatelessWidget {
   final String title;
   final List<Map<String, dynamic>> items;
   final Color accentColor, headerColor;
+  final bool isAdminAdded;
 
   const _SectionBlock({
     required this.title,
     required this.items,
     required this.accentColor,
     required this.headerColor,
+    this.isAdminAdded = false,
   });
 
   @override
@@ -2919,22 +3188,56 @@ class _SectionBlock extends StatelessWidget {
               Expanded(child: Divider(color: AppTheme.divider, thickness: 1)),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 14),
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontFamily: 'Poppins',
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 2.5,
-                    color: headerColor,
-                  ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontFamily: 'Poppins',
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 2.5,
+                        color: headerColor,
+                      ),
+                    ),
+                    if (isAdminAdded) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppTheme.accent.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text(
+                          'NEW',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 8,
+                            fontWeight: FontWeight.w800,
+                            color: AppTheme.primary,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
               Expanded(child: Divider(color: AppTheme.divider, thickness: 1)),
             ],
           ),
         ),
-        ...items.map((item) => _MealCard(item: item, accentColor: accentColor)),
+        ...items.map(
+          (item) => _MealCard(
+            item: item,
+            accentColor: accentColor,
+            isAdminAdded: isAdminAdded,
+          ),
+        ),
       ],
     );
   }
@@ -2944,11 +3247,17 @@ class _SectionBlock extends StatelessWidget {
 class _MealCard extends StatelessWidget {
   final Map<String, dynamic> item;
   final Color accentColor;
+  final bool isAdminAdded;
 
-  const _MealCard({required this.item, required this.accentColor});
+  const _MealCard({
+    required this.item,
+    required this.accentColor,
+    this.isAdminAdded = false,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final assetPath = item["asset"] as String? ?? '';
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: AppTheme.card(radius: 20),
@@ -2956,44 +3265,28 @@ class _MealCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            height: 200,
-            width: double.infinity,
-            child: Image.asset(
-              item["asset"] as String,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(
-                color: AppTheme.accent.withOpacity(0.08),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.restaurant_menu_rounded,
-                      size: 48,
-                      color: AppTheme.accent.withOpacity(0.5),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      item["name"] as String,
-                      style: AppTheme.body.copyWith(
-                        fontSize: 13,
-                        color: AppTheme.primaryLight,
-                      ),
-                    ),
-                  ],
-                ),
+          // Image — show placeholder for admin-added meals with no asset
+          if (assetPath.isNotEmpty)
+            SizedBox(
+              height: 200,
+              width: double.infinity,
+              child: Image.asset(
+                assetPath,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _imagePlaceholder(),
               ),
-            ),
-          ),
+            )
+          else
+            _imagePlaceholder(),
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(item["name"] as String, style: AppTheme.subheading),
+                Text(item["name"] as String? ?? '', style: AppTheme.subheading),
                 const SizedBox(height: 6),
                 Text(
-                  item["desc"] as String,
+                  item["desc"] as String? ?? '',
                   style: AppTheme.body.copyWith(fontSize: 13),
                 ),
                 const SizedBox(height: 14),
@@ -3046,6 +3339,40 @@ class _MealCard extends StatelessWidget {
         fontFamily: 'Poppins',
         fontWeight: FontWeight.w600,
       ),
+    ),
+  );
+
+  Widget _imagePlaceholder() => Container(
+    height: 160,
+    width: double.infinity,
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        colors: [
+          AppTheme.primary.withOpacity(0.08),
+          AppTheme.accent.withOpacity(0.10),
+        ],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
+    ),
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(
+          Icons.restaurant_menu_rounded,
+          size: 52,
+          color: AppTheme.accent.withOpacity(0.5),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          item["name"] as String? ?? '',
+          style: AppTheme.body.copyWith(
+            fontSize: 13,
+            color: AppTheme.primaryLight,
+          ),
+          textAlign: TextAlign.center,
+        ),
+      ],
     ),
   );
 }
