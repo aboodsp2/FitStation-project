@@ -897,149 +897,190 @@ class _ExploreRestaurantsScreenState extends State<ExploreRestaurantsScreen> {
     super.dispose();
   }
 
-  List<_Restaurant> get _filtered => _restaurants
-      .where(
-        (r) =>
-            r.name.toLowerCase().contains(_query.toLowerCase()) ||
-            r.cuisine.toLowerCase().contains(_query.toLowerCase()),
-      )
-      .toList();
+  // Static restaurant IDs so we don't show duplicates
+  static final _staticIds = _restaurants.map((r) => r.id).toSet();
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.background,
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            pinned: true,
-            expandedHeight: 140,
-            backgroundColor: AppTheme.primary,
-            leading: IconButton(
-              icon: const Icon(
-                Icons.arrow_back_ios_new_rounded,
-                color: Colors.white,
-              ),
-              onPressed: () => Navigator.pop(context),
-            ),
-            flexibleSpace: FlexibleSpaceBar(
-              background: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [AppTheme.primary, AppTheme.primaryLight],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance.collection('resturants').snapshots(),
+        builder: (context, snap) {
+          // Build Firestore-approved restaurants not in static list
+          final firestoreRestaurants = <_Restaurant>[];
+          if (snap.hasData) {
+            for (final doc in snap.data!.docs) {
+              final id = doc.id;
+              if (_staticIds.contains(id)) continue; // skip duplicates
+              final d = doc.data() as Map<String, dynamic>;
+              firestoreRestaurants.add(
+                _Restaurant(
+                  id: id,
+                  name: d['name'] as String? ?? 'Restaurant',
+                  cuisine: d['cuisine'] as String? ?? 'Healthy',
+                  rating: _safeFirestoreDouble(d['rating'] ?? 4.5),
+                  deliveryTime: d['deliveryTime'] as String? ?? '30–45 min',
+                  brandColor: AppTheme.primary,
+                  icon: Icons.restaurant_rounded,
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 16, 20),
-                  child: Align(
-                    alignment: Alignment.bottomLeft,
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Explore Restaurants',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontFamily: 'Poppins',
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                '${_restaurants.length} healthy spots near you',
-                                style: TextStyle(
-                                  color: Colors.white.withOpacity(0.7),
-                                  fontFamily: 'Poppins',
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ],
+              );
+            }
+          }
+
+          // Merge: static first, then Firestore-only
+          final allRestaurants = [..._restaurants, ...firestoreRestaurants];
+
+          // Filter by query
+          final filtered = _query.isEmpty
+              ? allRestaurants
+              : allRestaurants
+                    .where(
+                      (r) =>
+                          r.name.toLowerCase().contains(_query.toLowerCase()) ||
+                          r.cuisine.toLowerCase().contains(
+                            _query.toLowerCase(),
                           ),
+                    )
+                    .toList();
+
+          return CustomScrollView(
+            slivers: [
+              SliverAppBar(
+                pinned: true,
+                expandedHeight: 140,
+                backgroundColor: AppTheme.primary,
+                leading: IconButton(
+                  icon: const Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    color: Colors.white,
+                  ),
+                  onPressed: () => Navigator.pop(context),
+                ),
+                flexibleSpace: FlexibleSpaceBar(
+                  background: Container(
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [AppTheme.primary, AppTheme.primaryLight],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 16, 20),
+                      child: Align(
+                        alignment: Alignment.bottomLeft,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Explore Restaurants',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontFamily: 'Poppins',
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${allRestaurants.length} healthy spots near you',
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(0.7),
+                                      fontFamily: 'Poppins',
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            _ExploreCartBadge(),
+                          ],
                         ),
-                        _ExploreCartBadge(),
-                      ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-              child: TextField(
-                controller: _searchCtrl,
-                onChanged: (v) => setState(() => _query = v),
-                style: AppTheme.body.copyWith(
-                  color: AppTheme.dark,
-                  fontSize: 14,
-                ),
-                decoration: InputDecoration(
-                  hintText: 'Search restaurants or cuisine...',
-                  hintStyle: AppTheme.body.copyWith(fontSize: 13),
-                  prefixIcon: const Icon(
-                    Icons.search_rounded,
-                    color: AppTheme.accent,
-                    size: 20,
-                  ),
-                  suffixIcon: _query.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(
-                            Icons.close_rounded,
-                            color: AppTheme.muted,
-                            size: 18,
-                          ),
-                          onPressed: () {
-                            _searchCtrl.clear();
-                            setState(() => _query = '');
-                          },
-                        )
-                      : null,
-                  filled: true,
-                  fillColor: AppTheme.surface,
-                  contentPadding: const EdgeInsets.symmetric(
-                    vertical: 14,
-                    horizontal: 16,
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: BorderSide.none,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: const BorderSide(
-                      color: AppTheme.accent,
-                      width: 1.5,
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+                  child: TextField(
+                    controller: _searchCtrl,
+                    onChanged: (v) => setState(() => _query = v),
+                    style: AppTheme.body.copyWith(
+                      color: AppTheme.dark,
+                      fontSize: 14,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'Search restaurants or cuisine...',
+                      hintStyle: AppTheme.body.copyWith(fontSize: 13),
+                      prefixIcon: const Icon(
+                        Icons.search_rounded,
+                        color: AppTheme.accent,
+                        size: 20,
+                      ),
+                      suffixIcon: _query.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(
+                                Icons.close_rounded,
+                                color: AppTheme.muted,
+                                size: 18,
+                              ),
+                              onPressed: () {
+                                _searchCtrl.clear();
+                                setState(() => _query = '');
+                              },
+                            )
+                          : null,
+                      filled: true,
+                      fillColor: AppTheme.surface,
+                      contentPadding: const EdgeInsets.symmetric(
+                        vertical: 14,
+                        horizontal: 16,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: const BorderSide(
+                          color: AppTheme.accent,
+                          width: 1.5,
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ),
-          _filtered.isEmpty
-              ? SliverFillRemaining(
-                  child: Center(
-                    child: Text('No restaurants found', style: AppTheme.body),
-                  ),
-                )
-              : SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-                  sliver: SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, i) => _RestaurantCard(restaurant: _filtered[i]),
-                      childCount: _filtered.length,
+              filtered.isEmpty
+                  ? SliverFillRemaining(
+                      child: Center(
+                        child: Text(
+                          'No restaurants found',
+                          style: AppTheme.body,
+                        ),
+                      ),
+                    )
+                  : SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+                      sliver: SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, i) =>
+                              _RestaurantCard(restaurant: filtered[i]),
+                          childCount: filtered.length,
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }
@@ -1122,6 +1163,34 @@ class _ExploreCartBadgeState extends State<_ExploreCartBadge> {
   }
 }
 
+// ── Meal count badge — reads from Firestore for dynamic restaurants ─────────────
+class _RestaurantMealCount extends StatelessWidget {
+  final String restaurantId;
+  final int staticCount;
+  const _RestaurantMealCount({
+    required this.restaurantId,
+    required this.staticCount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (staticCount > 0) {
+      return Text('$staticCount meals', style: AppTheme.label);
+    }
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('resturants')
+          .doc(restaurantId)
+          .collection('meals')
+          .snapshots(),
+      builder: (_, snap) {
+        final count = snap.data?.docs.length ?? 0;
+        return Text('$count meals', style: AppTheme.label);
+      },
+    );
+  }
+}
+
 // ── Restaurant list card ──────────────────────────────────────────────────────
 class _RestaurantCard extends StatelessWidget {
   final _Restaurant restaurant;
@@ -1150,7 +1219,15 @@ class _RestaurantCard extends StatelessWidget {
                 topLeft: Radius.circular(20),
                 bottomLeft: Radius.circular(20),
               ),
-              child: restaurant.logoAsset.isNotEmpty
+              child: restaurant.logoAsset.startsWith('http')
+                  ? Image.network(
+                      restaurant.logoAsset,
+                      width: 86,
+                      height: 86,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _logoFallback(),
+                    )
+                  : restaurant.logoAsset.isNotEmpty
                   ? Image.asset(
                       restaurant.logoAsset,
                       width: 86,
@@ -1158,7 +1235,7 @@ class _RestaurantCard extends StatelessWidget {
                       fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => _logoFallback(),
                     )
-                  : _logoFallback(),
+                  : _initialsLogo(),
             ),
             Expanded(
               child: Padding(
@@ -1220,9 +1297,9 @@ class _RestaurantCard extends StatelessWidget {
                         const SizedBox(width: 3),
                         Text(restaurant.deliveryTime, style: AppTheme.label),
                         const Spacer(),
-                        Text(
-                          '${restaurant.meals.length} meals',
-                          style: AppTheme.label,
+                        _RestaurantMealCount(
+                          restaurantId: restaurant.id,
+                          staticCount: restaurant.meals.length,
                         ),
                       ],
                     ),
@@ -1254,6 +1331,31 @@ class _RestaurantCard extends StatelessWidget {
       size: 34,
     ),
   );
+
+  Widget _initialsLogo() {
+    final words = restaurant.name.trim().split(' ');
+    final initials = words.length >= 2
+        ? '${words[0][0]}${words[1][0]}'.toUpperCase()
+        : restaurant.name
+              .substring(0, restaurant.name.length.clamp(1, 2))
+              .toUpperCase();
+    return Container(
+      width: 86,
+      height: 86,
+      color: restaurant.brandColor,
+      child: Center(
+        child: Text(
+          initials,
+          style: const TextStyle(
+            color: Colors.white,
+            fontFamily: 'Poppins',
+            fontSize: 26,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 // ── Restaurant detail screen ──────────────────────────────────────────────────

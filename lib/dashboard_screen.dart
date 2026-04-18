@@ -200,7 +200,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         duration: const Duration(milliseconds: 220),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: sel ? AppTheme.primary.withValues(alpha: 0.13) : Colors.transparent,
+          color: sel
+              ? AppTheme.primary.withValues(alpha: 0.13)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(22),
         ),
         child: Column(
@@ -238,7 +240,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         duration: const Duration(milliseconds: 220),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: sel ? AppTheme.primary.withValues(alpha: 0.13) : Colors.transparent,
+          color: sel
+              ? AppTheme.primary.withValues(alpha: 0.13)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(22),
         ),
         child: Column(
@@ -417,12 +421,17 @@ class _HomeTabState extends State<_HomeTab> {
               decoration: BoxDecoration(
                 color: AppTheme.accent.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppTheme.accent.withValues(alpha: 0.35)),
+                border: Border.all(
+                  color: AppTheme.accent.withValues(alpha: 0.35),
+                ),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.visibility_outlined,
-                      color: AppTheme.primary, size: 16),
+                  const Icon(
+                    Icons.visibility_outlined,
+                    color: AppTheme.primary,
+                    size: 16,
+                  ),
                   const SizedBox(width: 8),
                   const Expanded(
                     child: Text(
@@ -435,8 +444,11 @@ class _HomeTabState extends State<_HomeTab> {
                       ),
                     ),
                   ),
-                  const Icon(Icons.chevron_right_rounded,
-                      color: AppTheme.primary, size: 16),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    color: AppTheme.primary,
+                    size: 16,
+                  ),
                 ],
               ),
             ),
@@ -487,17 +499,24 @@ class _HomeTabState extends State<_HomeTab> {
                     width: 1.5,
                   ),
                 ),
-                child: Icon(Icons.person_outline_rounded,
-                    color: AppTheme.primary, size: 28),
+                child: Icon(
+                  Icons.person_outline_rounded,
+                  color: AppTheme.primary,
+                  size: 28,
+                ),
               ),
               const SizedBox(width: 13),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("Hey, Guest 👋",
-                      style: AppTheme.subheading.copyWith(fontSize: 17)),
-                  Text("Sign in for full access",
-                      style: AppTheme.body.copyWith(fontSize: 12)),
+                  Text(
+                    "Hey, Guest 👋",
+                    style: AppTheme.subheading.copyWith(fontSize: 17),
+                  ),
+                  Text(
+                    "Sign in for full access",
+                    style: AppTheme.body.copyWith(fontSize: 12),
+                  ),
                 ],
               ),
             ],
@@ -511,8 +530,7 @@ class _HomeTabState extends State<_HomeTab> {
               );
             },
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
                 color: AppTheme.primary,
                 borderRadius: BorderRadius.circular(14),
@@ -764,7 +782,9 @@ class _HomeTabState extends State<_HomeTab> {
                                       vertical: 4,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: Colors.white.withValues(alpha: 0.18),
+                                      color: Colors.white.withValues(
+                                        alpha: 0.18,
+                                      ),
                                       borderRadius: BorderRadius.circular(20),
                                     ),
                                     child: Text(
@@ -791,13 +811,19 @@ class _HomeTabState extends State<_HomeTab> {
                                   Text(
                                     b["sub"] as String,
                                     style: TextStyle(
-                                      color: Colors.white.withValues(alpha: 0.65),
+                                      color: Colors.white.withValues(
+                                        alpha: 0.65,
+                                      ),
                                       fontSize: 12,
                                     ),
                                   ),
                                   const SizedBox(height: 12),
                                   GestureDetector(
                                     onTap: () {
+                                      if (GuestManager().isGuest) {
+                                        showGuestSignupSheet(context);
+                                        return;
+                                      }
                                       final action = b["action"] as String;
                                       switch (action) {
                                         case "supplements":
@@ -835,16 +861,34 @@ class _HomeTabState extends State<_HomeTab> {
                                         vertical: 8,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: AppTheme.accent,
+                                        color: GuestManager().isGuest
+                                            ? Colors.white.withOpacity(0.25)
+                                            : AppTheme.accent,
                                         borderRadius: BorderRadius.circular(20),
                                       ),
-                                      child: Text(
-                                        b["btn"] as String,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 12,
-                                        ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (GuestManager().isGuest)
+                                            const Padding(
+                                              padding: EdgeInsets.only(
+                                                right: 5,
+                                              ),
+                                              child: Icon(
+                                                Icons.lock_rounded,
+                                                color: Colors.white,
+                                                size: 11,
+                                              ),
+                                            ),
+                                          Text(
+                                            b["btn"] as String,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ),
@@ -948,28 +992,51 @@ class _HomeTabState extends State<_HomeTab> {
                                 ),
                                 const SizedBox(height: 12),
                                 GestureDetector(
-                                  onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => DealsScreen(deals: deals),
-                                    ),
-                                  ),
+                                  onTap: () {
+                                    if (GuestManager().isGuest) {
+                                      showGuestSignupSheet(context);
+                                      return;
+                                    }
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            DealsScreen(deals: deals),
+                                      ),
+                                    );
+                                  },
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 18,
                                       vertical: 8,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: AppTheme.accent,
+                                      color: GuestManager().isGuest
+                                          ? Colors.white.withOpacity(0.25)
+                                          : AppTheme.accent,
                                       borderRadius: BorderRadius.circular(20),
                                     ),
-                                    child: const Text(
-                                      "Shop Deals",
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 12,
-                                      ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (GuestManager().isGuest)
+                                          const Padding(
+                                            padding: EdgeInsets.only(right: 5),
+                                            child: Icon(
+                                              Icons.lock_rounded,
+                                              color: Colors.white,
+                                              size: 11,
+                                            ),
+                                          ),
+                                        const Text(
+                                          "Shop Deals",
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ),

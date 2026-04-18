@@ -1333,17 +1333,38 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
                                     ),
                                   ),
                                   onPressed: () {
+                                    if (GuestManager().isGuest) {
+                                      Navigator.pop(context);
+                                      showGuestSignupSheet(context);
+                                      return;
+                                    }
                                     widget.onAddToCart(_qty);
                                     Navigator.pop(context);
                                   },
-                                  child: Text(
-                                    "Add $_qty to Cart",
-                                    style: const TextStyle(
-                                      fontFamily: 'Poppins',
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 14,
-                                    ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      if (GuestManager().isGuest)
+                                        const Padding(
+                                          padding: EdgeInsets.only(right: 6),
+                                          child: Icon(
+                                            Icons.lock_rounded,
+                                            color: Colors.white,
+                                            size: 16,
+                                          ),
+                                        ),
+                                      Text(
+                                        GuestManager().isGuest
+                                            ? "Sign In to Add"
+                                            : "Add $_qty to Cart",
+                                        style: const TextStyle(
+                                          fontFamily: 'Poppins',
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),

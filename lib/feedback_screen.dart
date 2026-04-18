@@ -60,20 +60,59 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
         .collection('userOrders')
         .get();
 
-    // 2. Collect unique purchased supplements (by supplementId)
+    // 2. Load all supplements for name→id lookup (handles old orders with no id field)
+    final supSnap = await FirebaseFirestore.instance
+        .collection('supplements')
+        .get();
+    final nameToId = <String, String>{};
+    final nameToImage = <String, String>{};
+    for (final doc in supSnap.docs) {
+      final d = doc.data();
+      final n = (d['name'] as String? ?? '').trim().toLowerCase();
+      if (n.isNotEmpty) {
+        nameToId[n] = doc.id;
+        nameToImage[n] = d['imageUrl'] as String? ?? '';
+      }
+    }
+
+    // 3. Collect unique purchased supplements
     final Map<String, _PurchasedProduct> uniqueMap = {};
     for (final orderDoc in ordersSnap.docs) {
       final data = orderDoc.data();
       final items =
           (data['items'] as List?)?.cast<Map<String, dynamic>>() ?? [];
       for (final item in items) {
-        // We stored the supplement Firestore ID as the cart item id
-        final supId = item['id'] as String? ?? '';
-        final name = item['name'] as String? ?? '';
-        final imageUrl = item['imageUrl'] as String? ?? '';
-        if (supId.isNotEmpty && !uniqueMap.containsKey(supId)) {
-          uniqueMap[supId] = _PurchasedProduct(
-            supplementId: supId,
+        final name = (item['name'] as String? ?? '').trim();
+        if (name.isEmpty) continue;
+
+        // Try stored id first, fall back to name lookup
+        String supId = item['id'] as String? ?? '';
+        String imageUrl = item['imageUrl'] as String? ?? '';
+
+        if (supId.isEmpty) {
+          // Look up by name (case-insensitive)
+          final key = name.toLowerCase();
+          supId = nameToId[key] ?? '';
+          // Also try partial match
+          if (supId.isEmpty) {
+            for (final entry in nameToId.entries) {
+              if (key.contains(entry.key) || entry.key.contains(key)) {
+                supId = entry.value;
+                if (imageUrl.isEmpty) imageUrl = nameToImage[entry.key] ?? '';
+                break;
+              }
+            }
+          }
+          if (imageUrl.isEmpty && supId.isNotEmpty) {
+            imageUrl = nameToImage[name.toLowerCase()] ?? '';
+          }
+        }
+
+        // Use name as key if still no id (so it still shows up)
+        final mapKey = supId.isNotEmpty ? supId : name;
+        if (!uniqueMap.containsKey(mapKey)) {
+          uniqueMap[mapKey] = _PurchasedProduct(
+            supplementId: supId.isNotEmpty ? supId : mapKey,
             name: name,
             imageUrl: imageUrl,
             orderId: orderDoc.id,
@@ -82,7 +121,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
       }
     }
 
-    // 3. Check which ones the user has already reviewed
+    // 4. Check which ones the user has already reviewed
     final reviewedSnap = await FirebaseFirestore.instance
         .collection('feedback')
         .where('userId', isEqualTo: user.uid)
@@ -92,6 +131,9 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
     for (final doc in reviewedSnap.docs) {
       final sid = doc.data()['supplementId'] as String? ?? '';
       if (sid.isNotEmpty) reviewed[sid] = true;
+      // Also mark by productName for old reviews
+      final pn = doc.data()['productName'] as String? ?? '';
+      if (pn.isNotEmpty) reviewed[pn] = true;
     }
 
     setState(() {
@@ -152,10 +194,12 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
 
   Widget _buildList() {
     final pending = _products
-        .where((p) => !(_reviewed[p.supplementId] ?? false))
+        .where(
+          (p) => !(_reviewed[p.supplementId] ?? _reviewed[p.name] ?? false),
+        )
         .toList();
     final done = _products
-        .where((p) => _reviewed[p.supplementId] ?? false)
+        .where((p) => (_reviewed[p.supplementId] ?? _reviewed[p.name] ?? false))
         .toList();
 
     return ListView(
@@ -239,7 +283,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                     vertical: 2,
                   ),
                   decoration: BoxDecoration(
-                    color: AppTheme.primary.withValues(alpha: 0.1),
+                    color: Colors.green.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
@@ -248,7 +292,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                       fontFamily: 'Poppins',
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: AppTheme.primary,
+                      color: Colors.green,
                     ),
                   ),
                 ),
@@ -414,18 +458,10 @@ class _ProductCard extends StatelessWidget {
         ),
         child: Row(
           children: [
-            // Product image
+            // Product image — handles assets/ and https:// URLs
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: product.imageUrl.isNotEmpty
-                  ? Image.network(
-                      product.imageUrl,
-                      width: 60,
-                      height: 60,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _fallbackIcon(),
-                    )
-                  : _fallbackIcon(),
+              child: _buildImage(),
             ),
             const SizedBox(width: 14),
 
@@ -503,10 +539,47 @@ class _ProductCard extends StatelessWidget {
     );
   }
 
+  Widget _buildImage() {
+    final url = product.imageUrl;
+    if (url.isEmpty) return _fallbackIcon();
+    if (url.startsWith('assets/')) {
+      return Image.asset(
+        url,
+        width: 60,
+        height: 60,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _fallbackIcon(),
+      );
+    }
+    return Image.network(
+      url,
+      width: 60,
+      height: 60,
+      fit: BoxFit.cover,
+      loadingBuilder: (_, child, prog) => prog == null
+          ? child
+          : Container(
+              width: 60,
+              height: 60,
+              color: AppTheme.accent.withValues(alpha: 0.08),
+              child: const Center(
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppTheme.accent,
+                ),
+              ),
+            ),
+      errorBuilder: (_, __, ___) => _fallbackIcon(),
+    );
+  }
+
   Widget _fallbackIcon() => Container(
     width: 60,
     height: 60,
-    color: AppTheme.accent.withValues(alpha: 0.10),
+    decoration: BoxDecoration(
+      color: AppTheme.accent.withValues(alpha: 0.10),
+      borderRadius: BorderRadius.circular(12),
+    ),
     child: const Icon(Icons.science_rounded, color: AppTheme.accent, size: 28),
   );
 }
@@ -714,15 +787,7 @@ class _ReviewSheetState extends State<_ReviewSheet> {
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(14),
-                  child: widget.product.imageUrl.isNotEmpty
-                      ? Image.network(
-                          widget.product.imageUrl,
-                          width: 72,
-                          height: 72,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => _icon(),
-                        )
-                      : _icon(),
+                  child: _buildSheetImage(),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -874,6 +939,27 @@ class _ReviewSheetState extends State<_ReviewSheet> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildSheetImage() {
+    final url = widget.product.imageUrl;
+    if (url.isEmpty) return _icon();
+    if (url.startsWith('assets/')) {
+      return Image.asset(
+        url,
+        width: 72,
+        height: 72,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _icon(),
+      );
+    }
+    return Image.network(
+      url,
+      width: 72,
+      height: 72,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => _icon(),
     );
   }
 

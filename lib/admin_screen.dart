@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'app_theme.dart';
 import 'auth_screen.dart';
 import 'supplement_models.dart' show SupplementImage;
@@ -84,6 +86,7 @@ class _AdminScreenState extends State<AdminScreen> {
         _NavItem(Icons.science_rounded, 'Supplements'),
         _NavItem(Icons.receipt_long_rounded, 'Orders'),
         _NavItem(Icons.restaurant_menu_rounded, 'Meal Plans'),
+        _NavItem(Icons.pending_actions_rounded, 'Requests'),
         _NavItem(Icons.video_call_rounded, 'Consults'),
         _NavItem(Icons.feedback_rounded, 'Feedback'),
       ];
@@ -102,6 +105,7 @@ class _AdminScreenState extends State<AdminScreen> {
         _SupplementsTab(),
         _SupplementOrdersTab(),
         _FitStationMealPlansTab(),
+        _RegistrationRequestsTab(),
         _ConsultationsTab(),
         _FeedbackTab(),
       ];
@@ -3468,7 +3472,7 @@ class _FitStationPlansTab extends StatelessWidget {
       'id': 'weight_loss',
       'label': 'Weight Loss Plan',
       'icon': Icons.trending_down_rounded,
-      'color': Color.fromARGB(255, 65, 51, 21),
+      'color': Color(0xFF1E6B4A),
       'kcal': '1,500 kcal/day',
       'defaultPrice': 35.0,
     },
@@ -3476,7 +3480,7 @@ class _FitStationPlansTab extends StatelessWidget {
       'id': 'maintain',
       'label': 'Maintain Weight Plan',
       'icon': Icons.balance_rounded,
-      'color': Color.fromARGB(255, 65, 51, 21),
+      'color': Color(0xFF1A5276),
       'kcal': '2,000 kcal/day',
       'defaultPrice': 38.0,
     },
@@ -3484,7 +3488,7 @@ class _FitStationPlansTab extends StatelessWidget {
       'id': 'muscle_gain',
       'label': 'Muscle Gain Plan',
       'icon': Icons.trending_up_rounded,
-      'color': Color.fromARGB(255, 65, 51, 21),
+      'color': Color(0xFF7B2D00),
       'kcal': '2,800 kcal/day',
       'defaultPrice': 48.0,
     },
@@ -4745,6 +4749,624 @@ class _FitStationOrderCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SUPERADMIN — REGISTRATION REQUESTS TAB
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _RegistrationRequestsTab extends StatefulWidget {
+  @override
+  State<_RegistrationRequestsTab> createState() =>
+      _RegistrationRequestsTabState();
+}
+
+class _RegistrationRequestsTabState extends State<_RegistrationRequestsTab> {
+  String _filter = 'pending';
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    'Registration Requests',
+                    style: AppTheme.heading.copyWith(fontSize: 20),
+                  ),
+                  const SizedBox(width: 10),
+                  // Live pending badge
+                  StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('registrationRequests')
+                        .where('status', isEqualTo: 'pending')
+                        .snapshots(),
+                    builder: (_, snap) {
+                      final count = snap.data?.docs.length ?? 0;
+                      if (count == 0) return const SizedBox.shrink();
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.orange,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '$count new',
+                          style: const TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              // Filter chips
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: ['pending', 'approved', 'declined'].map((f) {
+                    final sel = f == _filter;
+                    final color = f == 'pending'
+                        ? Colors.orange
+                        : f == 'approved'
+                        ? Colors.green
+                        : Colors.red;
+                    return GestureDetector(
+                      onTap: () => setState(() => _filter = f),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        margin: const EdgeInsets.only(right: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: sel ? color : AppTheme.surface,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: sel ? color : AppTheme.divider,
+                          ),
+                        ),
+                        child: Text(
+                          f[0].toUpperCase() + f.substring(1),
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: sel ? Colors.white : AppTheme.muted,
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('registrationRequests')
+                .where('status', isEqualTo: _filter)
+                .snapshots(),
+            builder: (_, snap) {
+              if (snap.hasError) {
+                return _EmptyState(label: 'Error loading requests');
+              }
+              if (!snap.hasData) {
+                return const Center(
+                  child: CircularProgressIndicator(color: AppTheme.primary),
+                );
+              }
+              final docs = snap.data!.docs;
+              if (docs.isEmpty) {
+                return _EmptyState(label: 'No $_filter requests');
+              }
+              return ListView.builder(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
+                itemCount: docs.length,
+                itemBuilder: (_, i) {
+                  final d = docs[i];
+                  final data = d.data() as Map<String, dynamic>;
+                  return _RegistrationRequestCard(docId: d.id, data: data);
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RegistrationRequestCard extends StatefulWidget {
+  final String docId;
+  final Map<String, dynamic> data;
+  const _RegistrationRequestCard({required this.docId, required this.data});
+
+  @override
+  State<_RegistrationRequestCard> createState() =>
+      _RegistrationRequestCardState();
+}
+
+class _RegistrationRequestCardState extends State<_RegistrationRequestCard> {
+  bool _processing = false;
+
+  Future<void> _updateStatus(String status) async {
+    setState(() => _processing = true);
+    try {
+      // Update request status
+      await FirebaseFirestore.instance
+          .collection('registrationRequests')
+          .doc(widget.docId)
+          .update({
+            'status': status,
+            'reviewedAt': FieldValue.serverTimestamp(),
+          });
+
+      if (status == 'approved') {
+        // Generate next restaurant ID
+        final restSnap = await FirebaseFirestore.instance
+            .collection('resturants')
+            .get();
+        final newId = 'r${restSnap.docs.length + 1}';
+
+        // Add to resturants collection
+        await FirebaseFirestore.instance
+            .collection('resturants')
+            .doc(newId)
+            .set({
+              'name': widget.data['restaurantName'] ?? '',
+              'cuisine': widget.data['cuisine'] ?? '',
+              'ownerEmail': widget.data['ownerEmail'] ?? '',
+              'ownerName': widget.data['ownerName'] ?? '',
+              'phone': widget.data['phone'] ?? '',
+              'address': widget.data['address'] ?? '',
+              'description': widget.data['description'] ?? '',
+              'rating': 0.0,
+              'deliveryTime': '30–45 min',
+              'approved': true,
+              'createdAt': FieldValue.serverTimestamp(),
+            });
+
+        // Add to admins collection so they can log in as restaurant admin
+        await FirebaseFirestore.instance.collection('admins').add({
+          'email': (widget.data['ownerEmail'] as String? ?? '').toLowerCase(),
+          'role': 'restaurant',
+          'restaurantId': newId,
+          'restaurantName': widget.data['restaurantName'] ?? '',
+        });
+
+        // Send approval email via EmailJS
+        await _sendEmail(
+          toEmail: widget.data['ownerEmail'] as String? ?? '',
+          toName: widget.data['ownerName'] as String? ?? '',
+          subject: '🎉 Welcome to FitStation — Your Restaurant is Approved!',
+          message:
+              'Congratulations ${widget.data['ownerName']}!\n\n'
+              'Your restaurant "${widget.data['restaurantName']}" has been APPROVED and is now live on FitStation!\n\n'
+              'You can log in to your restaurant admin panel using your registered email: ${widget.data['ownerEmail']}\n\n'
+              'Welcome to the FitStation family! 💪\n\n'
+              '— The FitStation Team',
+        );
+      } else {
+        // Send decline email via EmailJS
+        await _sendEmail(
+          toEmail: widget.data['ownerEmail'] as String? ?? '',
+          toName: widget.data['ownerName'] as String? ?? '',
+          subject:
+              'FitStation — Application Update for ${widget.data['restaurantName']}',
+          message:
+              'Dear ${widget.data['ownerName']},\n\n'
+              'Thank you for applying to join FitStation with "${widget.data['restaurantName']}".\n\n'
+              'After careful review, we are unable to approve your application at this time.\n\n'
+              'We encourage you to apply again in the future. For questions, contact us at support@fitstation.com\n\n'
+              '— The FitStation Team',
+        );
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(
+                  status == 'approved'
+                      ? Icons.check_circle_rounded
+                      : Icons.cancel_rounded,
+                  color: Colors.white,
+                  size: 18,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  status == 'approved'
+                      ? 'Restaurant approved & email sent!'
+                      : 'Request declined & email sent',
+                  style: const TextStyle(fontFamily: 'Poppins'),
+                ),
+              ],
+            ),
+            backgroundColor: status == 'approved'
+                ? Colors.green.shade600
+                : Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Error: $e',
+              style: const TextStyle(fontFamily: 'Poppins'),
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+    if (mounted) setState(() => _processing = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final status = widget.data['status'] as String? ?? 'pending';
+    final isPending = status == 'pending';
+    final date = (widget.data['createdAt'] as Timestamp?)?.toDate();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: AppTheme.card(radius: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Header ──────────────────────────────────────────────
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withValues(alpha: 0.06),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(20),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(
+                    Icons.restaurant_rounded,
+                    color: AppTheme.primary,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.data['restaurantName'] as String? ?? '—',
+                        style: AppTheme.subheading.copyWith(fontSize: 15),
+                      ),
+                      Text(
+                        widget.data['cuisine'] as String? ?? '',
+                        style: AppTheme.body.copyWith(fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+                // Status badge
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color:
+                        (isPending
+                                ? Colors.orange
+                                : status == 'approved'
+                                ? Colors.green
+                                : Colors.red)
+                            .withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    status[0].toUpperCase() + status.substring(1),
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: isPending
+                          ? Colors.orange
+                          : status == 'approved'
+                          ? Colors.green
+                          : Colors.red,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // ── Details ──────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _InfoRow(
+                  Icons.person_rounded,
+                  widget.data['ownerName'] as String? ?? '—',
+                ),
+                const SizedBox(height: 6),
+                _InfoRow(
+                  Icons.email_rounded,
+                  widget.data['ownerEmail'] as String? ?? '—',
+                ),
+                const SizedBox(height: 6),
+                _InfoRow(
+                  Icons.phone_rounded,
+                  widget.data['phone'] as String? ?? '—',
+                ),
+                const SizedBox(height: 6),
+                _InfoRow(
+                  Icons.location_on_rounded,
+                  widget.data['address'] as String? ?? '—',
+                ),
+                if ((widget.data['description'] as String? ?? '')
+                    .isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  _InfoRow(
+                    Icons.description_rounded,
+                    widget.data['description'] as String,
+                  ),
+                ],
+                if (date != null) ...[
+                  const SizedBox(height: 6),
+                  _InfoRow(
+                    Icons.calendar_today_rounded,
+                    'Applied ${date.day}/${date.month}/${date.year}',
+                  ),
+                ],
+
+                // ── Action buttons (only for pending) ─────────────
+                if (isPending) ...[
+                  const SizedBox(height: 16),
+                  const Divider(color: AppTheme.divider, height: 1),
+                  const SizedBox(height: 14),
+                  _processing
+                      ? const Center(
+                          child: CircularProgressIndicator(
+                            color: AppTheme.primary,
+                          ),
+                        )
+                      : Row(
+                          children: [
+                            // Decline
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: () => _confirmAction('declined'),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.withValues(alpha: 0.10),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: Colors.red.withValues(alpha: 0.3),
+                                    ),
+                                  ),
+                                  child: const Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.close_rounded,
+                                        color: Colors.red,
+                                        size: 16,
+                                      ),
+                                      SizedBox(width: 6),
+                                      Text(
+                                        'Decline',
+                                        style: TextStyle(
+                                          fontFamily: 'Poppins',
+                                          color: Colors.red,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            // Approve
+                            Expanded(
+                              flex: 2,
+                              child: GestureDetector(
+                                onTap: () => _confirmAction('approved'),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green,
+                                    borderRadius: BorderRadius.circular(12),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.green.withValues(
+                                          alpha: 0.3,
+                                        ),
+                                        blurRadius: 10,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
+                                  ),
+                                  child: const Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.check_circle_rounded,
+                                        color: Colors.white,
+                                        size: 16,
+                                      ),
+                                      SizedBox(width: 6),
+                                      Text(
+                                        'Approve & Add Restaurant',
+                                        style: TextStyle(
+                                          fontFamily: 'Poppins',
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── EmailJS sender ────────────────────────────────────────────────────────
+  // Replace these 3 constants with your EmailJS credentials
+  static const _emailjsServiceId = 'service_q1hj491';
+  static const _emailjsTemplateId = 'template_vvhl8yb';
+  static const _emailjsPublicKey = 'TjlvigRzVsvHN0PfD';
+
+  Future<void> _sendEmail({
+    required String toEmail,
+    required String toName,
+    required String subject,
+    required String message,
+  }) async {
+    try {
+      await http.post(
+        Uri.parse('https://api.emailjs.com/api/v1.0/email/send'),
+        headers: {
+          'Content-Type': 'application/json',
+          'origin': 'http://localhost',
+        },
+        body: jsonEncode({
+          'service_id': _emailjsServiceId,
+          'template_id': _emailjsTemplateId,
+          'user_id': _emailjsPublicKey,
+          'template_params': {
+            'to_email': toEmail,
+            'to_name': toName,
+            'subject': subject,
+            'message': message,
+            'from_name': 'FitStation Team',
+          },
+        }),
+      );
+    } catch (e) {
+      debugPrint('EmailJS error: $e');
+    }
+  }
+
+  void _confirmAction(String action) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          action == 'approved' ? 'Approve Restaurant?' : 'Decline Request?',
+          style: AppTheme.subheading.copyWith(fontSize: 16),
+        ),
+        content: Text(
+          action == 'approved'
+              ? '"${widget.data['restaurantName']}" will be added to the app and the owner will receive a welcome email.'
+              : 'The owner will receive a decline notification email.',
+          style: AppTheme.body.copyWith(fontSize: 13, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: action == 'approved' ? Colors.green : Colors.red,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: () {
+              Navigator.pop(context);
+              _updateStatus(action);
+            },
+            child: Text(
+              action == 'approved' ? 'Approve' : 'Decline',
+              style: const TextStyle(
+                color: Colors.white,
+                fontFamily: 'Poppins',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  const _InfoRow(this.icon, this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: AppTheme.muted, size: 14),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: AppTheme.body.copyWith(fontSize: 13),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
     );
   }
 }
