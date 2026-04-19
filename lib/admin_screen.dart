@@ -4921,68 +4921,108 @@ class _RegistrationRequestCardState extends State<_RegistrationRequestCard> {
             'reviewedAt': FieldValue.serverTimestamp(),
           });
 
+      final type = widget.data['type'] as String? ?? 'restaurant';
+
       if (status == 'approved') {
-        // Generate next restaurant ID
-        final restSnap = await FirebaseFirestore.instance
-            .collection('resturants')
-            .get();
-        final newId = 'r${restSnap.docs.length + 1}';
+        if (type == 'driver') {
+          // Approve driver: create drivers document
+          await FirebaseFirestore.instance
+              .collection('drivers')
+              .doc(widget.data['uid'] as String? ?? widget.docId)
+              .set({
+                'name': widget.data['driverName'] ?? widget.data['ownerName'] ?? '',
+                'email': widget.data['ownerEmail'] ?? '',
+                'phone': widget.data['phone'] ?? '',
+                'vehicleType': widget.data['vehicleType'] ?? '',
+                'vehicleNumber': widget.data['vehicleNumber'] ?? '',
+                'isAvailable': true,
+                'totalEarnings': 0.0,
+                'totalDeliveries': 0,
+                'rating': 0.0,
+                'joinedDate': FieldValue.serverTimestamp(),
+              });
 
-        // Add to resturants collection
-        await FirebaseFirestore.instance
-            .collection('resturants')
-            .doc(newId)
-            .set({
-              'name': widget.data['restaurantName'] ?? '',
-              'cuisine': widget.data['cuisine'] ?? '',
-              'ownerEmail': widget.data['ownerEmail'] ?? '',
-              'ownerName': widget.data['ownerName'] ?? '',
-              'phone': widget.data['phone'] ?? '',
-              'address': widget.data['address'] ?? '',
-              'description': widget.data['description'] ?? '',
-              'rating': 0.0,
-              'deliveryTime': '30–45 min',
-              'approved': true,
-              'createdAt': FieldValue.serverTimestamp(),
-            });
+          await _sendEmail(
+            toEmail: widget.data['ownerEmail'] as String? ?? '',
+            toName: widget.data['ownerName'] as String? ?? '',
+            subject: '🎉 Welcome to FitStation — You are Approved as a Driver!',
+            message:
+                'Congratulations ${widget.data['ownerName']}!\n\n'
+                'Your driver application has been APPROVED!\n\n'
+                'You can now log in to the FitStation app using your registered email: ${widget.data['ownerEmail']}\n\n'
+                'Welcome to the FitStation delivery team! 🚀\n\n'
+                '— The FitStation Team',
+          );
+        } else {
+          // Approve restaurant: existing flow
+          final restSnap = await FirebaseFirestore.instance
+              .collection('resturants')
+              .get();
+          final newId = 'r${restSnap.docs.length + 1}';
 
-        // Add to admins collection so they can log in as restaurant admin
-        await FirebaseFirestore.instance.collection('admins').add({
-          'email': (widget.data['ownerEmail'] as String? ?? '').toLowerCase(),
-          'role': 'restaurant',
-          'restaurantId': newId,
-          'restaurantName': widget.data['restaurantName'] ?? '',
-        });
+          await FirebaseFirestore.instance
+              .collection('resturants')
+              .doc(newId)
+              .set({
+                'name': widget.data['restaurantName'] ?? '',
+                'cuisine': widget.data['cuisine'] ?? '',
+                'ownerEmail': widget.data['ownerEmail'] ?? '',
+                'ownerName': widget.data['ownerName'] ?? '',
+                'phone': widget.data['phone'] ?? '',
+                'address': widget.data['address'] ?? '',
+                'description': widget.data['description'] ?? '',
+                'rating': 0.0,
+                'deliveryTime': '30–45 min',
+                'approved': true,
+                'createdAt': FieldValue.serverTimestamp(),
+              });
 
-        // Send approval email via EmailJS
-        await _sendEmail(
-          toEmail: widget.data['ownerEmail'] as String? ?? '',
-          toName: widget.data['ownerName'] as String? ?? '',
-          subject: '🎉 Welcome to FitStation — Your Restaurant is Approved!',
-          message:
-              'Congratulations ${widget.data['ownerName']}!\n\n'
-              'Your restaurant "${widget.data['restaurantName']}" has been APPROVED and is now live on FitStation!\n\n'
-              'You can log in to your restaurant admin panel using your registered email: ${widget.data['ownerEmail']}\n\n'
-              'Welcome to the FitStation family! 💪\n\n'
-              '— The FitStation Team',
-        );
+          await FirebaseFirestore.instance.collection('admins').add({
+            'email': (widget.data['ownerEmail'] as String? ?? '').toLowerCase(),
+            'role': 'restaurant',
+            'restaurantId': newId,
+            'restaurantName': widget.data['restaurantName'] ?? '',
+          });
+
+          await _sendEmail(
+            toEmail: widget.data['ownerEmail'] as String? ?? '',
+            toName: widget.data['ownerName'] as String? ?? '',
+            subject: '🎉 Welcome to FitStation — Your Restaurant is Approved!',
+            message:
+                'Congratulations ${widget.data['ownerName']}!\n\n'
+                'Your restaurant "${widget.data['restaurantName']}" has been APPROVED and is now live on FitStation!\n\n'
+                'You can log in to your restaurant admin panel using your registered email: ${widget.data['ownerEmail']}\n\n'
+                'Welcome to the FitStation family! 💪\n\n'
+                '— The FitStation Team',
+          );
+        }
       } else {
-        // Send decline email via EmailJS
-        await _sendEmail(
-          toEmail: widget.data['ownerEmail'] as String? ?? '',
-          toName: widget.data['ownerName'] as String? ?? '',
-          subject:
-              'FitStation — Application Update for ${widget.data['restaurantName']}',
-          message:
-              'Dear ${widget.data['ownerName']},\n\n'
+        // Decline email
+        final subject = type == 'driver'
+            ? 'FitStation — Driver Application Update'
+            : 'FitStation — Application Update for ${widget.data['restaurantName']}';
+        final body = type == 'driver'
+            ? 'Dear ${widget.data['ownerName']},\n\n'
+              'Thank you for applying to join FitStation as a driver.\n\n'
+              'After careful review, we are unable to approve your application at this time.\n\n'
+              'We encourage you to apply again in the future. For questions, contact us at support@fitstation.com\n\n'
+              '— The FitStation Team'
+            : 'Dear ${widget.data['ownerName']},\n\n'
               'Thank you for applying to join FitStation with "${widget.data['restaurantName']}".\n\n'
               'After careful review, we are unable to approve your application at this time.\n\n'
               'We encourage you to apply again in the future. For questions, contact us at support@fitstation.com\n\n'
-              '— The FitStation Team',
+              '— The FitStation Team';
+
+        await _sendEmail(
+          toEmail: widget.data['ownerEmail'] as String? ?? '',
+          toName: widget.data['ownerName'] as String? ?? '',
+          subject: subject,
+          message: body,
         );
       }
 
       if (mounted) {
+        final label = type == 'driver' ? 'Driver' : 'Restaurant';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Row(
@@ -4997,7 +5037,7 @@ class _RegistrationRequestCardState extends State<_RegistrationRequestCard> {
                 const SizedBox(width: 10),
                 Text(
                   status == 'approved'
-                      ? 'Restaurant approved & email sent!'
+                      ? '$label approved & email sent!'
                       : 'Request declined & email sent',
                   style: const TextStyle(fontFamily: 'Poppins'),
                 ),
@@ -5034,6 +5074,8 @@ class _RegistrationRequestCardState extends State<_RegistrationRequestCard> {
     final status = widget.data['status'] as String? ?? 'pending';
     final isPending = status == 'pending';
     final date = (widget.data['createdAt'] as Timestamp?)?.toDate();
+    final type = widget.data['type'] as String? ?? 'restaurant';
+    final isDriver = type == 'driver';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -5059,8 +5101,8 @@ class _RegistrationRequestCardState extends State<_RegistrationRequestCard> {
                     color: AppTheme.primary.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: const Icon(
-                    Icons.restaurant_rounded,
+                  child: Icon(
+                    isDriver ? Icons.delivery_dining : Icons.restaurant_rounded,
                     color: AppTheme.primary,
                     size: 22,
                   ),
@@ -5071,16 +5113,38 @@ class _RegistrationRequestCardState extends State<_RegistrationRequestCard> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        widget.data['restaurantName'] as String? ?? '—',
+                        isDriver
+                            ? (widget.data['driverName'] as String? ?? widget.data['ownerName'] as String? ?? '—')
+                            : (widget.data['restaurantName'] as String? ?? '—'),
                         style: AppTheme.subheading.copyWith(fontSize: 15),
                       ),
                       Text(
-                        widget.data['cuisine'] as String? ?? '',
+                        isDriver
+                            ? (widget.data['vehicleType'] as String? ?? '')
+                            : (widget.data['cuisine'] as String? ?? ''),
                         style: AppTheme.body.copyWith(fontSize: 11),
                       ),
                     ],
                   ),
                 ),
+                // Type badge
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: (isDriver ? Colors.blue : Colors.orange).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    isDriver ? 'Driver' : 'Restaurant',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: isDriver ? Colors.blue : Colors.orange,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
                 // Status badge
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -5135,18 +5199,25 @@ class _RegistrationRequestCardState extends State<_RegistrationRequestCard> {
                   Icons.phone_rounded,
                   widget.data['phone'] as String? ?? '—',
                 ),
-                const SizedBox(height: 6),
-                _InfoRow(
-                  Icons.location_on_rounded,
-                  widget.data['address'] as String? ?? '—',
-                ),
-                if ((widget.data['description'] as String? ?? '')
-                    .isNotEmpty) ...[
+                if (isDriver) ...[
                   const SizedBox(height: 6),
                   _InfoRow(
-                    Icons.description_rounded,
-                    widget.data['description'] as String,
+                    Icons.two_wheeler_rounded,
+                    '${widget.data['vehicleType'] ?? '—'}  ·  ${widget.data['vehicleNumber'] ?? '—'}',
                   ),
+                ] else ...[
+                  const SizedBox(height: 6),
+                  _InfoRow(
+                    Icons.location_on_rounded,
+                    widget.data['address'] as String? ?? '—',
+                  ),
+                  if ((widget.data['description'] as String? ?? '').isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    _InfoRow(
+                      Icons.description_rounded,
+                      widget.data['description'] as String,
+                    ),
+                  ],
                 ],
                 if (date != null) ...[
                   const SizedBox(height: 6),
@@ -5230,18 +5301,18 @@ class _RegistrationRequestCardState extends State<_RegistrationRequestCard> {
                                       ),
                                     ],
                                   ),
-                                  child: const Row(
+                                  child: Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      Icon(
+                                      const Icon(
                                         Icons.check_circle_rounded,
                                         color: Colors.white,
                                         size: 16,
                                       ),
-                                      SizedBox(width: 6),
+                                      const SizedBox(width: 6),
                                       Text(
-                                        'Approve & Add Restaurant',
-                                        style: TextStyle(
+                                        isDriver ? 'Approve Driver' : 'Approve & Add Restaurant',
+                                        style: const TextStyle(
                                           fontFamily: 'Poppins',
                                           color: Colors.white,
                                           fontWeight: FontWeight.w600,
@@ -5302,18 +5373,25 @@ class _RegistrationRequestCardState extends State<_RegistrationRequestCard> {
   }
 
   void _confirmAction(String action) {
+    final isDriver = (widget.data['type'] as String? ?? 'restaurant') == 'driver';
+    final name = isDriver
+        ? (widget.data['driverName'] as String? ?? widget.data['ownerName'] as String? ?? '')
+        : (widget.data['restaurantName'] as String? ?? '');
+
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
-          action == 'approved' ? 'Approve Restaurant?' : 'Decline Request?',
+          action == 'approved'
+              ? (isDriver ? 'Approve Driver?' : 'Approve Restaurant?')
+              : 'Decline Request?',
           style: AppTheme.subheading.copyWith(fontSize: 16),
         ),
         content: Text(
           action == 'approved'
-              ? '"${widget.data['restaurantName']}" will be added to the app and the owner will receive a welcome email.'
-              : 'The owner will receive a decline notification email.',
+              ? '"$name" will be approved and will receive a welcome email.'
+              : 'The applicant will receive a decline notification email.',
           style: AppTheme.body.copyWith(fontSize: 13, height: 1.5),
         ),
         actions: [

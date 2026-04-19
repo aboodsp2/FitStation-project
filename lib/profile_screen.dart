@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'app_theme.dart';
 import 'profile_form_screen.dart' show kNationalities;
+import 'driver_mode_toggle.dart';
 
 class ProfileSection extends StatefulWidget {
   const ProfileSection({super.key});
@@ -326,7 +327,7 @@ class _ProfileSectionState extends State<ProfileSection> {
           ],
         ),
         const SizedBox(height: 28),
-
+        const DriverModeToggle(),
         Center(child: _avatar()),
         const SizedBox(height: 12),
         if (!_editing) ...[

@@ -7,6 +7,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'app_theme.dart';
 import 'admin_screen.dart';
+import 'driver_signup_screen.dart';
+import 'driver_dashboard_screen.dart';
 
 // ─── GUEST MANAGER ───────────────────────────────────────────────────────────
 class GuestManager {
@@ -598,7 +600,10 @@ class _SignInPageState extends State<SignInPage> {
         // Check if this is a pending restaurant application
         final pendingSnap = await FirebaseFirestore.instance
             .collection('registrationRequests')
-            .where('ownerEmail', isEqualTo: _emailCtrl.text.trim().toLowerCase())
+            .where(
+              'ownerEmail',
+              isEqualTo: _emailCtrl.text.trim().toLowerCase(),
+            )
             .where('status', isEqualTo: 'pending')
             .limit(1)
             .get();
@@ -606,21 +611,41 @@ class _SignInPageState extends State<SignInPage> {
         if (!mounted) return;
 
         if (pendingSnap.docs.isNotEmpty) {
+          final type = pendingSnap.docs.first.data()['type'] as String? ?? 'restaurant';
           final messenger = ScaffoldMessenger.of(context);
           await FirebaseAuth.instance.signOut();
           setState(() => _loading = false);
-          messenger.showSnackBar(const SnackBar(
-            content: Text(
-              'Your restaurant application is still pending admin approval.',
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(
+                type == 'driver'
+                    ? 'Your driver application is still pending admin approval.'
+                    : 'Your restaurant application is still pending admin approval.',
+              ),
             ),
-          ));
+          );
           return;
         }
 
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const DashboardScreen()),
-        );
+        // Check if this user is a driver
+        final driverDoc = await FirebaseFirestore.instance
+            .collection('drivers')
+            .doc(FirebaseAuth.instance.currentUser!.uid)
+            .get();
+
+        if (!mounted) return;
+
+        if (driverDoc.exists) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const DriverDashboardScreen()),
+          );
+        } else {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const DashboardScreen()),
+          );
+        }
       }
     } on FirebaseAuthException catch (e) {
       if (mounted) {
@@ -969,12 +994,32 @@ class _SignUpPageState extends State<SignUpPage> {
                     selected: _role == 'restaurant',
                     onTap: () => setState(() => _role = 'restaurant'),
                   ),
-                  const SizedBox(height: 36),
+                  const SizedBox(height: 16),
+                  _RoleCard(
+                    icon: Icons.delivery_dining,
+                    title: 'Driver',
+                    subtitle:
+                        'Deliver orders & earn money\non your own schedule',
+                    selected: _role == 'driver',
+                    onTap: () => setState(() => _role = 'driver'),
+                  ),
 
+                  const SizedBox(height: 36),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 40),
                     child: GestureDetector(
-                      onTap: () => setState(() => _step = 1),
+                      onTap: () {
+                        if (_role == 'driver') {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const DriverSignupScreen(),
+                            ),
+                          );
+                        } else {
+                          setState(() => _step = 1);
+                        }
+                      },
                       child: Container(
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(vertical: 16),
@@ -984,7 +1029,7 @@ class _SignUpPageState extends State<SignUpPage> {
                         ),
                         child: Center(
                           child: Text(
-                            'CONTINUE AS ${_role == 'restaurant' ? 'RESTAURANT' : 'CUSTOMER'}',
+                            'CONTINUE AS ${_role == 'restaurant' ? 'RESTAURANT' : _role == 'driver' ? 'DRIVER' : 'CUSTOMER'}',
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w800,

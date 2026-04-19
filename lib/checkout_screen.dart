@@ -653,6 +653,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           .doc(orderId)
           .set(orderData);
 
+      // Save to deliveryOrders for driver assignment
+      await FirebaseFirestore.instance
+          .collection('deliveryOrders')
+          .doc(orderId)
+          .set({
+            ...orderData,
+            'driverId': null,
+            'deliveryFee': 2.0,
+            'customerName': user.displayName ?? 'Customer',
+          });
+
       // Save meal items to mealOrders per restaurant
       final mealItems = widget.cartItems
           .where((i) => i.id.startsWith('meal_'))

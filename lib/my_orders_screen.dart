@@ -1,12 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'app_theme.dart';
 import 'supplement_store_screen.dart';
 import 'feedback_screen.dart';
 
 // ── Order Status ──────────────────────────────────────────────────────────────
-enum OrderStatus { processing, completed, failed, cancelled }
+enum OrderStatus {
+  processing,
+  confirmed,
+  assigned, // NEW - Driver assigned
+  pickedUp, // NEW - Driver picked up order
+  inTransit, // NEW - Driver is delivering
+  shipped, // Keep existing
+  delivered,
+  cancelled,
+}
 
 // ── Order Line Item ───────────────────────────────────────────────────────────
 class OrderLineItem {
@@ -32,6 +42,7 @@ class Order {
   final String address;
   final String payMethod;
   final String phone;
+  final String? driverId;
 
   const Order({
     required this.id,
@@ -42,14 +53,25 @@ class Order {
     required this.address,
     required this.payMethod,
     this.phone = '',
+    this.driverId,
   });
 
   static OrderStatus _parseStatus(String s) {
     switch (s) {
-      case 'completed':
-        return OrderStatus.completed;
-      case 'failed':
-        return OrderStatus.failed;
+      case 'confirmed':
+        return OrderStatus.confirmed;
+      case 'assigned': // NEW
+        return OrderStatus.assigned;
+      case 'pickedUp': // NEW
+      case 'picked_up': // NEW
+        return OrderStatus.pickedUp;
+      case 'inTransit': // NEW
+      case 'in_transit': // NEW
+        return OrderStatus.inTransit;
+      case 'shipped':
+        return OrderStatus.shipped;
+      case 'delivered':
+        return OrderStatus.delivered;
       case 'cancelled':
         return OrderStatus.cancelled;
       default:
@@ -67,6 +89,7 @@ class Order {
       address: data['address'] as String? ?? '',
       payMethod: data['payMethod'] as String? ?? 'cod',
       phone: data['phone'] as String? ?? '',
+      driverId: data['driverId'] as String?,
       items: rawItems.map((e) {
         final m = e as Map<String, dynamic>;
         return OrderLineItem(
@@ -340,29 +363,40 @@ class _OrderCard extends StatelessWidget {
   final Order order;
   const _OrderCard({required this.order});
 
-  Color _statusColor(OrderStatus s) {
-    switch (s) {
-      case OrderStatus.processing:
-        return Colors.orange;
-      case OrderStatus.completed:
+  Color _statusColor(OrderStatus status) {
+    switch (status) {
+      case OrderStatus.delivered:
         return Colors.green;
-      case OrderStatus.failed:
-        return Colors.red;
       case OrderStatus.cancelled:
         return Colors.red;
+      case OrderStatus.confirmed:
+        return Colors.blue;
+      case OrderStatus.assigned:
+      case OrderStatus.pickedUp:
+      case OrderStatus.inTransit:
+      case OrderStatus.shipped:
+        return Colors.indigo;
+      case OrderStatus.processing:
+        return Colors.orange;
     }
   }
 
-  IconData _statusIcon(OrderStatus s) {
-    switch (s) {
-      case OrderStatus.processing:
-        return Icons.hourglass_top_rounded;
-      case OrderStatus.completed:
+  IconData _statusIcon(OrderStatus status) {
+    switch (status) {
+      case OrderStatus.delivered:
         return Icons.check_circle_rounded;
-      case OrderStatus.failed:
-        return Icons.cancel_outlined;
       case OrderStatus.cancelled:
         return Icons.cancel_outlined;
+      case OrderStatus.inTransit:
+      case OrderStatus.shipped:
+        return Icons.local_shipping_rounded;
+      case OrderStatus.assigned:
+      case OrderStatus.pickedUp:
+        return Icons.delivery_dining_rounded;
+      case OrderStatus.confirmed:
+        return Icons.thumb_up_alt_rounded;
+      case OrderStatus.processing:
+        return Icons.hourglass_top_rounded;
     }
   }
 
@@ -556,10 +590,18 @@ class _StatusBadge extends StatelessWidget {
     switch (s) {
       case OrderStatus.processing:
         return 'Processing';
-      case OrderStatus.completed:
-        return 'Completed';
-      case OrderStatus.failed:
-        return 'Failed';
+      case OrderStatus.confirmed:
+        return 'Confirmed';
+      case OrderStatus.assigned:
+        return 'Driver Assigned';
+      case OrderStatus.pickedUp:
+        return 'Picked Up';
+      case OrderStatus.inTransit:
+        return 'In Transit';
+      case OrderStatus.shipped:
+        return 'Shipped';
+      case OrderStatus.delivered:
+        return 'Delivered';
       case OrderStatus.cancelled:
         return 'Cancelled';
     }
@@ -569,10 +611,15 @@ class _StatusBadge extends StatelessWidget {
     switch (s) {
       case OrderStatus.processing:
         return Colors.orange;
-      case OrderStatus.completed:
+      case OrderStatus.confirmed:
+        return Colors.blue;
+      case OrderStatus.assigned:
+      case OrderStatus.pickedUp:
+      case OrderStatus.inTransit:
+      case OrderStatus.shipped:
+        return Colors.indigo;
+      case OrderStatus.delivered:
         return Colors.green;
-      case OrderStatus.failed:
-        return Colors.red;
       case OrderStatus.cancelled:
         return Colors.red;
     }
@@ -631,23 +678,39 @@ class _OrderDetailScreenState extends State<_OrderDetailScreen> {
         '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
   }
 
-  String _stepLabel(OrderStatus s) {
-    switch (s) {
+  String _stepLabel(OrderStatus status) {
+    switch (status) {
       case OrderStatus.processing:
         return 'Processing';
-      case OrderStatus.completed:
-        return 'Completed';
+      case OrderStatus.confirmed:
+        return 'Confirmed';
+      case OrderStatus.assigned:
+        return 'Assigned';
+      case OrderStatus.pickedUp:
+        return 'Picked Up';
+      case OrderStatus.inTransit:
+        return 'In Transit';
+      case OrderStatus.delivered:
+        return 'Delivered';
       default:
         return '';
     }
   }
 
-  IconData _stepIcon(OrderStatus s) {
-    switch (s) {
+  IconData _stepIcon(OrderStatus status) {
+    switch (status) {
       case OrderStatus.processing:
-        return Icons.hourglass_top_rounded;
-      case OrderStatus.completed:
-        return Icons.check_circle_rounded;
+        return Icons.receipt;
+      case OrderStatus.confirmed:
+        return Icons.check_circle;
+      case OrderStatus.assigned:
+        return Icons.person;
+      case OrderStatus.pickedUp:
+        return Icons.shopping_bag;
+      case OrderStatus.inTransit:
+        return Icons.local_shipping;
+      case OrderStatus.delivered:
+        return Icons.done_all;
       default:
         return Icons.circle;
     }
@@ -695,6 +758,93 @@ class _OrderDetailScreenState extends State<_OrderDetailScreen> {
                 // ── Status tracker ───────────────────────────────────────────────
                 _buildTracker(liveStatus),
                 const SizedBox(height: 24),
+                if (order.status == OrderStatus.assigned ||
+                    order.status == OrderStatus.pickedUp ||
+                    order.status == OrderStatus.inTransit)
+                  FutureBuilder<DocumentSnapshot>(
+                    future: FirebaseFirestore.instance
+                        .collection('drivers')
+                        .doc(order.driverId)
+                        .get(),
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData) return const SizedBox();
+
+                      final driver =
+                          snapshot.data!.data() as Map<String, dynamic>;
+                      return Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: AppTheme.card(radius: 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Your Driver',
+                              style: AppTheme.subheading.copyWith(fontSize: 14),
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Container(
+                                  width: 48,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.primary,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      driver['name']
+                                          .substring(0, 1)
+                                          .toUpperCase(),
+                                      style: const TextStyle(
+                                        fontFamily: 'Poppins',
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        driver['name'],
+                                        style: AppTheme.subheading.copyWith(
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                      Text(
+                                        '${driver['vehicleType']} • ${driver['rating'].toStringAsFixed(1)} ⭐',
+                                        style: AppTheme.body.copyWith(
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.phone,
+                                    color: AppTheme.primary,
+                                  ),
+                                  onPressed: () async {
+                                    final url = 'tel:${driver['phone']}';
+                                    if (await canLaunchUrl(Uri.parse(url))) {
+                                      await launchUrl(Uri.parse(url));
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
 
                 // ── Items ────────────────────────────────────────────────────────
                 Text(
@@ -779,10 +929,15 @@ class _OrderDetailScreenState extends State<_OrderDetailScreen> {
   }
 
   Widget _buildTracker(OrderStatus liveStatus) {
-    final steps = [OrderStatus.processing, OrderStatus.completed];
-    final currentIdx =
-        (liveStatus == OrderStatus.cancelled ||
-            liveStatus == OrderStatus.failed)
+    final steps = [
+      OrderStatus.processing,
+      OrderStatus.confirmed,
+      OrderStatus.assigned,
+      OrderStatus.pickedUp,
+      OrderStatus.inTransit,
+      OrderStatus.delivered,
+    ];
+    final currentIdx = order.status == OrderStatus.cancelled
         ? -1
         : steps.indexOf(liveStatus);
 
@@ -790,8 +945,7 @@ class _OrderDetailScreenState extends State<_OrderDetailScreen> {
       padding: const EdgeInsets.all(16),
       decoration: AppTheme.card(radius: 16),
       child:
-          (liveStatus == OrderStatus.cancelled ||
-              liveStatus == OrderStatus.failed)
+          liveStatus == OrderStatus.cancelled
           ? Row(
               children: [
                 Container(
@@ -809,9 +963,7 @@ class _OrderDetailScreenState extends State<_OrderDetailScreen> {
                 ),
                 const SizedBox(width: 12),
                 Text(
-                  liveStatus == OrderStatus.failed
-                      ? 'Order failed'
-                      : 'Order cancelled',
+                  'Order cancelled',
                   style: AppTheme.subheading.copyWith(
                     fontSize: 15,
                     color: Colors.red,
