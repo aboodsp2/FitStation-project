@@ -77,6 +77,8 @@ class DeliveryOrder {
   final DateTime? pickedUpAt;
   final DateTime? deliveredAt;
   final double deliveryFee;
+  final double? orderRating;
+  final double? driverRating;
 
   const DeliveryOrder({
     required this.id,
@@ -96,6 +98,8 @@ class DeliveryOrder {
     this.pickedUpAt,
     this.deliveredAt,
     this.deliveryFee = 2.0,
+    this.orderRating,
+    this.driverRating,
   });
 
   factory DeliveryOrder.fromFirestore(DocumentSnapshot doc) {
@@ -128,6 +132,8 @@ class DeliveryOrder {
       pickedUpAt: (data['pickedUpAt'] as Timestamp?)?.toDate(),
       deliveredAt: (data['deliveredAt'] as Timestamp?)?.toDate(),
       deliveryFee: (data['deliveryFee'] as num?)?.toDouble() ?? 2.0,
+      orderRating: (data['orderRating'] as num?)?.toDouble(),
+      driverRating: (data['driverRating'] as num?)?.toDouble(),
     );
   }
 
@@ -155,6 +161,8 @@ class DeliveryOrder {
       'pickedUpAt': pickedUpAt != null ? Timestamp.fromDate(pickedUpAt!) : null,
       'deliveredAt': deliveredAt != null ? Timestamp.fromDate(deliveredAt!) : null,
       'deliveryFee': deliveryFee,
+      'orderRating': orderRating,
+      'driverRating': driverRating,
     };
   }
 }
@@ -186,6 +194,8 @@ class DriverProfile {
   final bool isActive;
   final bool isAvailable;
   final double rating;
+  final int ratingCount;
+  final double totalRatingPoints;
   final int totalDeliveries;
   final double totalEarnings;
   final DateTime joinedDate;
@@ -200,7 +210,9 @@ class DriverProfile {
     this.photoUrl,
     this.isActive = true,
     this.isAvailable = true,
-    this.rating = 5.0,
+    this.rating = 0.0,
+    this.ratingCount = 0,
+    this.totalRatingPoints = 0.0,
     this.totalDeliveries = 0,
     this.totalEarnings = 0.0,
     required this.joinedDate,
@@ -219,7 +231,9 @@ class DriverProfile {
       photoUrl: data['photoUrl'] as String?,
       isActive: data['isActive'] as bool? ?? true,
       isAvailable: data['isAvailable'] as bool? ?? true,
-      rating: (data['rating'] as num?)?.toDouble() ?? 5.0,
+      rating: (data['rating'] as num?)?.toDouble() ?? 0.0,
+      ratingCount: (data['ratingCount'] as num?)?.toInt() ?? 0,
+      totalRatingPoints: (data['totalRatingPoints'] as num?)?.toDouble() ?? 0.0,
       totalDeliveries: (data['totalDeliveries'] as num?)?.toInt() ?? 0,
       totalEarnings: (data['totalEarnings'] as num?)?.toDouble() ?? 0.0,
       joinedDate: (data['joinedDate'] as Timestamp?)?.toDate() ?? DateTime.now(),
@@ -237,6 +251,8 @@ class DriverProfile {
       'isActive': isActive,
       'isAvailable': isAvailable,
       'rating': rating,
+      'ratingCount': ratingCount,
+      'totalRatingPoints': totalRatingPoints,
       'totalDeliveries': totalDeliveries,
       'totalEarnings': totalEarnings,
       'joinedDate': Timestamp.fromDate(joinedDate),

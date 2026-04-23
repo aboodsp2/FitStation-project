@@ -492,16 +492,20 @@ class _MapPickerState extends State<_MapPicker> {
   }
 }
 
+enum OrderType { supplement, meal, consultation }
+
 // ── Main Checkout Screen ──────────────────────────────────────────────────────
 class CheckoutScreen extends StatefulWidget {
   final double total;
   final VoidCallback onOrderPlaced;
   final List<CartItem> cartItems;
+  final OrderType orderType;
   const CheckoutScreen({
     super.key,
     required this.total,
     required this.onOrderPlaced,
     required this.cartItems,
+    this.orderType = OrderType.supplement,
   });
   @override
   State<CheckoutScreen> createState() => _CheckoutScreenState();
@@ -613,72 +617,146 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         return;
       }
 
+      final db = FirebaseFirestore.instance;
       final orderId = (1000 + Random().nextInt(9000)).toString();
       final address = '${_addressCtrl.text.trim()}, ${_cityCtrl.text.trim()}';
       final now = DateTime.now();
 
-      final orderData = {
-        'id': orderId,
-        'userId': user.uid,
-        'userEmail': user.email ?? '',
-        'phone': _phoneCtrl.text.trim(),
-        'date': Timestamp.fromDate(now),
-        'total': widget.total,
-        'status': 'processing',
-        'address': address,
-        'payMethod': _payMethod,
-        'items': widget.cartItems
-            .map(
-              (i) => {
-                'name': i.name,
-                'qty': i.quantity,
-                'price': i.price,
-                'imageUrl': i.imageUrl,
-              },
-            )
-            .toList(),
-      };
+      if (widget.orderType == OrderType.supplement) {
+        // ── Supplement order → orders + deliveryOrders ────────────────────
+        final orderData = {
+          'id': orderId,
+          'userId': user.uid,
+          'userEmail': user.email ?? '',
+          'phone': _phoneCtrl.text.trim(),
+          'date': Timestamp.fromDate(now),
+          'total': widget.total,
+          'status': 'processing',
+          'address': address,
+          'payMethod': _payMethod,
+          'orderType': 'supplement',
+          'items': widget.cartItems
+              .map(
+                (i) => {
+                  'name': i.name,
+                  'qty': i.quantity,
+                  'price': i.price,
+                  'imageUrl': i.imageUrl,
+                },
+              )
+              .toList(),
+        };
 
-      // Save to Firestore: orders/{userId}/userOrders/{orderId}
-      await FirebaseFirestore.instance
-          .collection('orders')
-          .doc(user.uid)
-          .collection('userOrders')
-          .doc(orderId)
-          .set(orderData);
+        await db
+            .collection('orders')
+            .doc(user.uid)
+            .collection('userOrders')
+            .doc(orderId)
+            .set(orderData);
 
-      // Also save to flat allOrders collection for admin queries
-      await FirebaseFirestore.instance
-          .collection('allOrders')
-          .doc(orderId)
-          .set(orderData);
+        // Also write to deliveryOrders so admin can review and assign a driver
+        await db.collection('deliveryOrders').doc(orderId).set({
+          ...orderData,
+          'driverId': null,
+          'deliveryFee': 2.0,
+          'customerName': user.displayName ?? 'Customer',
+        });
 
-      // Save to deliveryOrders for driver assignment
-      await FirebaseFirestore.instance
-          .collection('deliveryOrders')
-          .doc(orderId)
-          .set({
-            ...orderData,
-            'driverId': null,
-            'deliveryFee': 2.0,
-            'customerName': user.displayName ?? 'Customer',
-          });
+        // Deduct supplement stock
+        await db.runTransaction((txn) async {
+          for (final cartItem in widget.cartItems) {
+            final ref = db.collection('supplements').doc(cartItem.id);
+            final snap = await txn.get(ref);
+            if (snap.exists) {
+              final raw = snap.data()?['quantity'];
+              final current = raw is num
+                  ? raw.toInt()
+                  : int.tryParse(raw?.toString() ?? '') ?? 0;
+              final newQty = (current - cartItem.quantity).clamp(0, 99999);
+              txn.update(ref, {'quantity': newQty});
+            }
+          }
+        });
 
-      // Save meal items to mealOrders per restaurant
-      final mealItems = widget.cartItems
-          .where((i) => i.id.startsWith('meal_'))
-          .toList();
-      if (mealItems.isNotEmpty) {
+        OrderManager().placeOrder(
+          Order(
+            id: orderId,
+            date: now,
+            total: widget.total,
+            items: widget.cartItems
+                .map(
+                  (i) => OrderLineItem(
+                    name: i.name,
+                    qty: i.quantity,
+                    price: i.price,
+                    imageUrl: i.imageUrl,
+                  ),
+                )
+                .toList(),
+            status: OrderStatus.processing,
+            address: address,
+            payMethod: _payMethod,
+            phone: _phoneCtrl.text.trim(),
+          ),
+        );
+      } else if (widget.orderType == OrderType.meal) {
+        // ── Meal / meal-plan order → deliveryOrders + orders + mealOrders ──
+        final orderData = {
+          'id': orderId,
+          'userId': user.uid,
+          'userEmail': user.email ?? '',
+          'phone': _phoneCtrl.text.trim(),
+          'date': Timestamp.fromDate(now),
+          'total': widget.total,
+          'status': 'processing',
+          'address': address,
+          'payMethod': _payMethod,
+          'orderType': 'meal',
+          'items': widget.cartItems
+              .map(
+                (i) => {
+                  'name': i.name,
+                  'qty': i.quantity,
+                  'price': i.price,
+                  'imageUrl': i.imageUrl,
+                },
+              )
+              .toList(),
+        };
+
+        await db.collection('deliveryOrders').doc(orderId).set({
+          ...orderData,
+          'driverId': null,
+          'deliveryFee': 2.0,
+          'customerName': user.displayName ?? 'Customer',
+        });
+
+        // Also write to orders/{uid}/userOrders so customer can track status
+        await db
+            .collection('orders')
+            .doc(user.uid)
+            .collection('userOrders')
+            .doc(orderId)
+            .set(orderData);
+
+        // Save per-restaurant breakdown so each restaurant sees its orders
         final Map<String, List<CartItem>> byRestaurant = {};
-        for (final item in mealItems) {
-          final parts = item.id.split('_');
-          final rId = parts.length > 1 ? parts[1] : 'unknown';
+        for (final item in widget.cartItems) {
+          final String rId;
+          if (item.id.startsWith('meal_')) {
+            final parts = item.id.split('_');
+            rId = parts.length > 1 ? parts[1] : 'unknown';
+          } else if (item.id.startsWith('fitstation_')) {
+            rId = 'fitstation';
+          } else {
+            rId = 'unknown';
+          }
           byRestaurant.putIfAbsent(rId, () => []).add(item);
         }
         for (final entry in byRestaurant.entries) {
           final rId = entry.key;
           final rItems = entry.value;
-          await FirebaseFirestore.instance.collection('mealOrders').add({
+          await db.collection('mealOrders').add({
             'orderId': orderId,
             'userId': user.uid,
             'userEmail': user.email ?? '',
@@ -703,47 +781,26 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             'createdAt': FieldValue.serverTimestamp(),
           });
         }
-      }
-
-      // Deduct stock quantities from supplements collection using a transaction
-      final db = FirebaseFirestore.instance;
-      await db.runTransaction((txn) async {
-        for (final cartItem in widget.cartItems) {
-          final ref = db.collection('supplements').doc(cartItem.id);
-          final snap = await txn.get(ref);
-          if (snap.exists) {
-            final raw = snap.data()?['quantity'];
-            final current = raw is num
-                ? raw.toInt()
-                : int.tryParse(raw?.toString() ?? '') ?? 0;
-            final newQty = (current - cartItem.quantity).clamp(0, 99999);
-            txn.update(ref, {'quantity': newQty});
+      } else if (widget.orderType == OrderType.consultation) {
+        // Booking is already saved in bookings collection.
+        // Clean up any consultation documents that may have been incorrectly
+        // written to deliveryOrders by older code versions.
+        final stale = await db
+            .collection('deliveryOrders')
+            .where('userId', isEqualTo: user.uid)
+            .get();
+        for (final doc in stale.docs) {
+          final items = doc.data()['items'] as List? ?? [];
+          final isConsultation = items.any(
+            (i) => ((i as Map)['name'] as String? ?? '').startsWith(
+              'Consultation:',
+            ),
+          );
+          if (isConsultation) {
+            await doc.reference.delete();
           }
         }
-      });
-
-      // Also keep local OrderManager in sync for this session
-      OrderManager().placeOrder(
-        Order(
-          id: orderId,
-          date: now,
-          total: widget.total,
-          items: widget.cartItems
-              .map(
-                (i) => OrderLineItem(
-                  name: i.name,
-                  qty: i.quantity,
-                  price: i.price,
-                  imageUrl: i.imageUrl,
-                ),
-              )
-              .toList(),
-          status: OrderStatus.processing,
-          address: address,
-          payMethod: _payMethod,
-          phone: _phoneCtrl.text.trim(),
-        ),
-      );
+      }
     } catch (e) {
       _snack("Failed to place order. Please try again.", Colors.redAccent);
       setState(() => _placing = false);

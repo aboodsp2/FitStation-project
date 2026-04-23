@@ -13,54 +13,30 @@ class DriverOrdersScreen extends StatefulWidget {
 }
 
 class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
-  String _selectedTab = 'available'; // available, mydeliveries
-
   @override
   Widget build(BuildContext context) {
     return SafeArea(
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Tab Selector
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-            child: Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: AppTheme.surface,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppTheme.primary.withOpacity(0.06),
-                    blurRadius: 12,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Expanded(child: _buildTab('available', 'Available')),
-                  Expanded(child: _buildTab('mydeliveries', 'My Deliveries')),
-                ],
-              ),
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+            child: Text(
+              'My Deliveries',
+              style: AppTheme.subheading.copyWith(fontSize: 18),
             ),
           ),
-
-          // Orders List
-          Expanded(
-            child: _selectedTab == 'available'
-                ? _buildAvailableOrders()
-                : _buildMyDeliveries(),
-          ),
+          Expanded(child: _buildMyDeliveries()),
         ],
       ),
     );
   }
 
   Widget _buildTab(String tab, String label) {
-    final isSelected = _selectedTab == tab;
+    final isSelected = tab == 'mydeliveries';
 
     return GestureDetector(
-      onTap: () => setState(() => _selectedTab = tab),
+      onTap: () {},
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
@@ -86,8 +62,6 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
       stream: FirebaseFirestore.instance
           .collection('deliveryOrders')
           .where('status', isEqualTo: 'confirmed')
-          .where('driverId', isNull: true)
-          .orderBy('date', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -102,7 +76,15 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
           );
         }
 
-        final orders = snapshot.data?.docs ?? [];
+        // Filter unassigned orders in memory to avoid composite index requirement
+        final orders = (snapshot.data?.docs ?? [])
+            .where((d) => (d.data() as Map<String, dynamic>)['driverId'] == null)
+            .toList()
+          ..sort((a, b) {
+            final aT = ((a.data() as Map)['date'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
+            final bT = ((b.data() as Map)['date'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
+            return bT.compareTo(aT);
+          });
 
         if (orders.isEmpty) {
           return _buildEmptyState(
@@ -136,7 +118,6 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
           .collection('deliveryOrders')
           .where('driverId', isEqualTo: user.uid)
           .where('status', whereIn: ['assigned', 'pickedUp', 'inTransit'])
-          .orderBy('assignedAt', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -151,7 +132,13 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
           );
         }
 
-        final orders = snapshot.data?.docs ?? [];
+        // Sort by assignedAt descending in memory to avoid composite index requirement
+        final orders = (snapshot.data?.docs ?? [])
+          ..sort((a, b) {
+            final aT = ((a.data() as Map)['assignedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
+            final bT = ((b.data() as Map)['assignedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
+            return bT.compareTo(aT);
+          });
 
         if (orders.isEmpty) {
           return _buildEmptyState(
@@ -241,7 +228,7 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
         ),
       );
 
-      setState(() => _selectedTab = 'mydeliveries');
+      setState(() {});
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -298,7 +285,7 @@ class _AvailableOrderCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Order #${order.id.substring(0, 8)}',
+                        'Order #${order.id}',
                         style: AppTheme.subheading.copyWith(fontSize: 14),
                       ),
                       const SizedBox(height: 2),
@@ -418,7 +405,7 @@ class _MyDeliveryCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    'Order #${order.id.substring(0, 8)}',
+                    'Order #${order.id}',
                     style: AppTheme.subheading.copyWith(fontSize: 15),
                   ),
                 ),

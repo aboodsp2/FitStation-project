@@ -233,7 +233,8 @@ class _MealCartScreenState extends State<MealCartScreen> {
       MaterialPageRoute(
         builder: (_) => CheckoutScreen(
           total: total,
-          cartItems: cartItems, // ← passes the required param
+          cartItems: cartItems,
+          orderType: OrderType.meal,
           onOrderPlaced: () {
             MealCartManager().clear();
           },

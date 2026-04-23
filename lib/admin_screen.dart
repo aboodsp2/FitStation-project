@@ -421,11 +421,11 @@ class _SuperAdminDashboard extends StatelessWidget {
         Row(
           children: [
             _StatCard(
-              label: 'Supplement\nOrders',
-              icon: Icons.science_rounded,
+              label: 'All Orders',
+              icon: Icons.receipt_long_rounded,
               color: const Color(0xFF4A90D9),
               stream: FirebaseFirestore.instance
-                  .collection('allOrders')
+                  .collection('deliveryOrders')
                   .snapshots(),
             ),
             const SizedBox(width: 12),
@@ -463,7 +463,7 @@ class _SuperAdminDashboard extends StatelessWidget {
         ),
         const SizedBox(height: 28),
         Text(
-          'Recent Supplement Orders',
+          'Recent Orders',
           style: AppTheme.subheading.copyWith(fontSize: 15),
         ),
         const SizedBox(height: 12),
@@ -552,7 +552,8 @@ class _RecentOrdersList extends StatelessWidget {
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
-          .collection('allOrders')
+          .collection('deliveryOrders')
+          .orderBy('date', descending: true)
           .limit(5)
           .snapshots(),
       builder: (_, snap) {
@@ -1508,7 +1509,7 @@ class _SupplementCard extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// SUPERADMIN — SUPPLEMENT ORDERS TAB
+// SUPERADMIN — ALL ORDERS TAB (supplement + meal, admin accept/decline)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class _SupplementOrdersTab extends StatefulWidget {
@@ -1519,6 +1520,15 @@ class _SupplementOrdersTab extends StatefulWidget {
 class _SupplementOrdersTabState extends State<_SupplementOrdersTab> {
   String _filter = 'all';
 
+  static const _filterOptions = [
+    ('all', 'All'),
+    ('processing', 'Pending'),
+    ('confirmed', 'Confirmed'),
+    ('assigned', 'Assigned'),
+    ('delivered', 'Delivered'),
+    ('cancelled', 'Cancelled'),
+  ];
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -1528,14 +1538,42 @@ class _SupplementOrdersTabState extends State<_SupplementOrdersTab> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Supplement Orders',
-                style: AppTheme.heading.copyWith(fontSize: 22),
-              ),
+              Text('Orders', style: AppTheme.heading.copyWith(fontSize: 22)),
               const SizedBox(height: 12),
-              _StatusFilter(
-                selected: _filter,
-                onChanged: (v) => setState(() => _filter = v),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: _filterOptions.map((o) {
+                    final sel = o.$1 == _filter;
+                    return GestureDetector(
+                      onTap: () => setState(() => _filter = o.$1),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        margin: const EdgeInsets.only(right: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: sel ? AppTheme.primary : AppTheme.surface,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: sel ? AppTheme.primary : AppTheme.divider,
+                          ),
+                        ),
+                        child: Text(
+                          o.$2,
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: sel ? Colors.white : AppTheme.muted,
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
               ),
             ],
           ),
@@ -1544,7 +1582,8 @@ class _SupplementOrdersTabState extends State<_SupplementOrdersTab> {
         Expanded(
           child: StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
-                .collection('allOrders')
+                .collection('deliveryOrders')
+                .orderBy('date', descending: true)
                 .snapshots(),
             builder: (_, snap) {
               if (!snap.hasData) {
@@ -1578,24 +1617,24 @@ class _SupplementOrdersTabState extends State<_SupplementOrdersTab> {
   }
 }
 
+
+// Reusable filter chip row used by multiple tabs
 class _StatusFilter extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onChanged;
-  const _StatusFilter({required this.selected, required this.onChanged});
-
-  static const _options = [
-    ('all', 'All'),
-    ('processing', 'Processing'),
-    ('completed', 'Completed'),
-    ('failed', 'Failed'),
-  ];
+  final List<(String, String)> options;
+  const _StatusFilter({
+    required this.selected,
+    required this.onChanged,
+    required this.options,
+  });
 
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
-        children: _options.map((o) {
+        children: options.map((o) {
           final sel = o.$1 == selected;
           return GestureDetector(
             onTap: () => onChanged(o.$1),
@@ -1627,16 +1666,152 @@ class _StatusFilter extends StatelessWidget {
   }
 }
 
-class _FullOrderCard extends StatelessWidget {
+class _FullOrderCard extends StatefulWidget {
   final Map<String, dynamic> data;
   final DocumentReference docRef;
   const _FullOrderCard({required this.data, required this.docRef});
 
   @override
+  State<_FullOrderCard> createState() => _FullOrderCardState();
+}
+
+class _FullOrderCardState extends State<_FullOrderCard> {
+  bool _busy = false;
+
+  Color _statusColor(String s) {
+    switch (s) {
+      case 'assigned':
+        return Colors.blue;
+      case 'confirmed':
+        return Colors.indigo;
+      case 'pickedUp':
+        return Colors.orange;
+      case 'inTransit':
+        return AppTheme.accent;
+      case 'delivered':
+        return Colors.green;
+      case 'cancelled':
+        return Colors.red;
+      default:
+        return AppTheme.muted;
+    }
+  }
+
+  String _statusLabel(String s) {
+    switch (s) {
+      case 'processing':
+        return 'Pending';
+      case 'confirmed':
+        return 'Confirmed';
+      case 'assigned':
+        return 'Assigned';
+      case 'pickedUp':
+        return 'Picked Up';
+      case 'inTransit':
+        return 'In Transit';
+      case 'delivered':
+        return 'Delivered';
+      case 'cancelled':
+        return 'Cancelled';
+      default:
+        return s;
+    }
+  }
+
+  Future<void> _propagate(String newStatus, {String? driverId}) async {
+    final userId = widget.data['userId'] as String? ?? '';
+    final orderId = widget.data['id'] as String? ?? '';
+    final db = FirebaseFirestore.instance;
+    final batch = db.batch();
+
+    final updates = <String, dynamic>{'status': newStatus};
+    if (driverId != null) {
+      updates['driverId'] = driverId;
+      updates['assignedAt'] = FieldValue.serverTimestamp();
+    }
+
+    batch.update(widget.docRef, updates);
+
+    if (userId.isNotEmpty && orderId.isNotEmpty) {
+      batch.update(
+        db
+            .collection('orders')
+            .doc(userId)
+            .collection('userOrders')
+            .doc(orderId),
+        updates,
+      );
+    }
+    await batch.commit();
+  }
+
+  Future<void> _accept() async {
+    setState(() => _busy = true);
+    try {
+      // Find the first available driver
+      final snap = await FirebaseFirestore.instance
+          .collection('drivers')
+          .where('isAvailable', isEqualTo: true)
+          .limit(1)
+          .get();
+
+      if (snap.docs.isNotEmpty) {
+        final driverId = snap.docs.first.id;
+        await _propagate('assigned', driverId: driverId);
+      } else {
+        // No driver online — mark confirmed so a driver can self-assign later
+        await _propagate('confirmed');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Order accepted. No driver available now — it will appear in Available Orders.',
+              ),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to accept order. Try again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _decline() async {
+    setState(() => _busy = true);
+    try {
+      await _propagate('cancelled');
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to decline order. Try again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final data = widget.data;
     final status = data['status'] as String? ?? 'processing';
+    final orderType = data['orderType'] as String? ?? 'supplement';
     final date = (data['date'] as Timestamp?)?.toDate();
     final items = (data['items'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    final isPending = status == 'processing';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -1649,6 +1824,31 @@ class _FullOrderCard extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
             child: Row(
               children: [
+                // Order type badge
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: orderType == 'meal'
+                        ? Colors.orange.withValues(alpha: 0.12)
+                        : AppTheme.primary.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    orderType == 'meal' ? 'Meal' : 'Supplement',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: orderType == 'meal'
+                          ? Colors.orange.shade700
+                          : AppTheme.primary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1668,7 +1868,7 @@ class _FullOrderCard extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '\$${_safeDouble(data['total']).toStringAsFixed(2)}',
+                  '${_safeDouble(data['total']).toStringAsFixed(2)} JD',
                   style: AppTheme.subheading.copyWith(
                     fontSize: 15,
                     color: AppTheme.primary,
@@ -1689,8 +1889,10 @@ class _FullOrderCard extends StatelessWidget {
                         padding: const EdgeInsets.only(bottom: 4),
                         child: Row(
                           children: [
-                            const Icon(
-                              Icons.science_rounded,
+                            Icon(
+                              orderType == 'meal'
+                                  ? Icons.restaurant_rounded
+                                  : Icons.science_rounded,
                               color: AppTheme.accent,
                               size: 14,
                             ),
@@ -1702,7 +1904,7 @@ class _FullOrderCard extends StatelessWidget {
                               ),
                             ),
                             Text(
-                              '\$${_safeDouble(item['price']).toStringAsFixed(2)}',
+                              '${_safeDouble(item['price']).toStringAsFixed(2)} JD',
                               style: AppTheme.body.copyWith(fontSize: 12),
                             ),
                           ],
@@ -1713,97 +1915,123 @@ class _FullOrderCard extends StatelessWidget {
               ),
             ),
           ],
-          // Status + address
+          // Address + actions
           const Divider(color: AppTheme.divider, height: 1),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                if ((data['address'] as String? ?? '').isNotEmpty)
+                  Row(
                     children: [
-                      if ((data['address'] as String? ?? '').isNotEmpty)
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.location_on_rounded,
-                              color: AppTheme.muted,
-                              size: 13,
+                      const Icon(
+                        Icons.location_on_rounded,
+                        color: AppTheme.muted,
+                        size: 13,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          data['address'] as String,
+                          style: AppTheme.body.copyWith(fontSize: 11),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                const SizedBox(height: 10),
+                if (isPending) ...[
+                  // Accept / Decline buttons
+                  _busy
+                      ? const Center(
+                          child: SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppTheme.primary,
                             ),
-                            const SizedBox(width: 4),
+                          ),
+                        )
+                      : Row(
+                          children: [
                             Expanded(
-                              child: Text(
-                                data['address'] as String,
-                                style: AppTheme.body.copyWith(fontSize: 11),
-                                overflow: TextOverflow.ellipsis,
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green.shade600,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 10,
+                                  ),
+                                  elevation: 0,
+                                ),
+                                onPressed: _accept,
+                                child: const Text(
+                                  'Accept',
+                                  style: TextStyle(
+                                    fontFamily: 'Poppins',
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: OutlinedButton(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.red,
+                                  side: const BorderSide(color: Colors.red),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 10,
+                                  ),
+                                ),
+                                onPressed: _decline,
+                                child: const Text(
+                                  'Decline',
+                                  style: TextStyle(
+                                    fontFamily: 'Poppins',
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
                               ),
                             ),
                           ],
                         ),
-                    ],
+                ] else ...[
+                  // Status badge (read-only for non-pending orders)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _statusColor(status).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      _statusLabel(status),
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: _statusColor(status),
+                      ),
+                    ),
                   ),
-                ),
-                // Status dropdown
-                _StatusDropdown(
-                  status: status,
-                  onChanged: (newStatus) async {
-                    // Update allOrders (admin view)
-                    await docRef.update({'status': newStatus});
-                    // Also update the user's own order so they see it live
-                    final userId = data['userId'] as String? ?? '';
-                    final orderId = data['id'] as String? ?? '';
-                    if (userId.isNotEmpty && orderId.isNotEmpty) {
-                      await FirebaseFirestore.instance
-                          .collection('orders')
-                          .doc(userId)
-                          .collection('userOrders')
-                          .doc(orderId)
-                          .update({'status': newStatus});
-                    }
-                  },
-                ),
+                ],
               ],
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _StatusDropdown extends StatelessWidget {
-  final String status;
-  final ValueChanged<String> onChanged;
-  const _StatusDropdown({required this.status, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppTheme.primary.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppTheme.primary.withValues(alpha: 0.2)),
-      ),
-      child: DropdownButton<String>(
-        value: status,
-        isDense: true,
-        underline: const SizedBox(),
-        style: const TextStyle(
-          fontFamily: 'Poppins',
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: AppTheme.primary,
-        ),
-        items: const [
-          DropdownMenuItem(value: 'processing', child: Text('Processing')),
-          DropdownMenuItem(value: 'completed', child: Text('Completed')),
-          DropdownMenuItem(value: 'failed', child: Text('Failed')),
-        ],
-        onChanged: (v) {
-          if (v != null) onChanged(v);
-        },
       ),
     );
   }
@@ -1838,6 +2066,12 @@ class _ConsultationsTabState extends State<_ConsultationsTab> {
               _StatusFilter(
                 selected: _filter,
                 onChanged: (v) => setState(() => _filter = v),
+                options: const [
+                  ('all', 'All'),
+                  ('pending', 'Pending'),
+                  ('confirmed', 'Confirmed'),
+                  ('cancelled', 'Cancelled'),
+                ],
               ),
             ],
           ),
@@ -3285,6 +3519,12 @@ class _MealOrdersTabState extends State<_MealOrdersTab> {
               _StatusFilter(
                 selected: _filter,
                 onChanged: (v) => setState(() => _filter = v),
+                options: const [
+                  ('all', 'All'),
+                  ('processing', 'Processing'),
+                  ('completed', 'Completed'),
+                  ('failed', 'Failed'),
+                ],
               ),
             ],
           ),
@@ -4545,6 +4785,12 @@ class _FitStationPlanOrdersTabState extends State<_FitStationPlanOrdersTab> {
           child: _StatusFilter(
             selected: _filter,
             onChanged: (v) => setState(() => _filter = v),
+            options: const [
+              ('all', 'All'),
+              ('processing', 'Processing'),
+              ('completed', 'Completed'),
+              ('failed', 'Failed'),
+            ],
           ),
         ),
         const SizedBox(height: 12),
@@ -4647,21 +4893,57 @@ class _FitStationOrderCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                _StatusDropdown(
-                  status: status,
-                  onChanged: (newStatus) async {
-                    await docRef.update({'status': newStatus});
-                    final userId = data['userId'] as String? ?? '';
-                    final orderId = data['orderId'] as String? ?? '';
-                    if (userId.isNotEmpty && orderId.isNotEmpty) {
-                      await FirebaseFirestore.instance
-                          .collection('orders')
-                          .doc(userId)
-                          .collection('userOrders')
-                          .doc(orderId)
-                          .update({'status': newStatus});
-                    }
-                  },
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: AppTheme.primary.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: DropdownButton<String>(
+                    value: status,
+                    isDense: true,
+                    underline: const SizedBox(),
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.primary,
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'processing',
+                        child: Text('Processing'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'completed',
+                        child: Text('Completed'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'failed',
+                        child: Text('Failed'),
+                      ),
+                    ],
+                    onChanged: (newStatus) async {
+                      if (newStatus == null) return;
+                      await docRef.update({'status': newStatus});
+                      final userId = data['userId'] as String? ?? '';
+                      final orderId = data['orderId'] as String? ?? '';
+                      if (userId.isNotEmpty && orderId.isNotEmpty) {
+                        await FirebaseFirestore.instance
+                            .collection('orders')
+                            .doc(userId)
+                            .collection('userOrders')
+                            .doc(orderId)
+                            .update({'status': newStatus});
+                      }
+                    },
+                  ),
                 ),
               ],
             ),
@@ -4939,6 +5221,8 @@ class _RegistrationRequestCardState extends State<_RegistrationRequestCard> {
                 'totalEarnings': 0.0,
                 'totalDeliveries': 0,
                 'rating': 0.0,
+                'ratingCount': 0,
+                'totalRatingPoints': 0.0,
                 'joinedDate': FieldValue.serverTimestamp(),
               });
 

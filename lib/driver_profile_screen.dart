@@ -95,6 +95,11 @@ class DriverProfileScreen extends StatelessWidget {
   }
 
   Widget _buildProfileHeader() {
+    final driverName = (driverProfile?.name ?? '').trim();
+    final driverInitial = driverName.isNotEmpty
+        ? driverName.substring(0, 1).toUpperCase()
+        : 'D';
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: AppTheme.card(radius: 20),
@@ -116,7 +121,7 @@ class DriverProfileScreen extends StatelessWidget {
             ),
             child: Center(
               child: Text(
-                driverProfile?.name.substring(0, 1).toUpperCase() ?? 'D',
+                driverInitial,
                 style: const TextStyle(
                   fontFamily: 'Poppins',
                   fontSize: 32,
@@ -154,7 +159,7 @@ class DriverProfileScreen extends StatelessWidget {
                 const Icon(Icons.star, color: Colors.orange, size: 16),
                 const SizedBox(width: 4),
                 Text(
-                  '${driverProfile?.rating.toStringAsFixed(1)} Rating',
+                  '${driverProfile?.rating.toStringAsFixed(1) ?? '0.0'} Rating',
                   style: const TextStyle(
                     fontFamily: 'Poppins',
                     fontSize: 12,

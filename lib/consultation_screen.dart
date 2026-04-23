@@ -1,11 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'dashboard_screen.dart';
-import 'checkout_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  MODEL
@@ -311,11 +308,7 @@ class _ConsultationScreenState extends State<ConsultationScreen>
   bool _confirming = false;
   Map<String, bool> _slotAvailability = {};
 
-  final _addressCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
-  LatLng? _pinLocation;
-  GoogleMapController? _mapCtrl;
-  static const LatLng _defaultLatLng = LatLng(31.9539, 35.9106);
 
   final _db = FirebaseFirestore.instance;
   final _auth = FirebaseAuth.instance;
@@ -334,9 +327,7 @@ class _ConsultationScreenState extends State<ConsultationScreen>
       _selectedDate = null;
       _selectedTime = null;
       _slotAvailability = {};
-      _pinLocation = null;
     });
-    _mapCtrl?.animateCamera(CameraUpdate.newLatLng(_defaultLatLng));
   }
 
   @override
@@ -344,9 +335,7 @@ class _ConsultationScreenState extends State<ConsultationScreen>
     _tabController
       ..removeListener(_onTabSwitch)
       ..dispose();
-    _addressCtrl.dispose();
     _scrollCtrl.dispose();
-    _mapCtrl?.dispose();
     super.dispose();
   }
 
@@ -417,21 +406,6 @@ class _ConsultationScreenState extends State<ConsultationScreen>
     }
   }
 
-  Future<void> _getCurrentLocation() async {
-    try {
-      if (!await Geolocator.isLocationServiceEnabled()) return;
-      var perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.denied) {
-        perm = await Geolocator.requestPermission();
-        if (perm == LocationPermission.denied) return;
-      }
-      final pos = await Geolocator.getCurrentPosition();
-      final ll = LatLng(pos.latitude, pos.longitude);
-      setState(() => _pinLocation = ll);
-      _mapCtrl?.animateCamera(CameraUpdate.newLatLng(ll));
-    } catch (_) {}
-  }
-
   Future<void> _confirmAndPay() async {
     final s = _selected!;
     final uid = _auth.currentUser?.uid ?? 'guest';
@@ -460,44 +434,108 @@ class _ConsultationScreenState extends State<ConsultationScreen>
           'date': _dateKey,
           'time': _selectedTime,
           'price': s.price,
-          'address': _addressCtrl.text.trim(),
-          'locationLat': _pinLocation?.latitude,
-          'locationLng': _pinLocation?.longitude,
           'status': 'pending',
           'createdAt': FieldValue.serverTimestamp(),
         });
       });
 
-      final bookingId = bookingRef.id;
-
-      CartManager().addItem(
-        CartItem(
-          id: bookingId,
-          name: 'Consultation: ${s.name}',
-          price: s.price,
-          quantity: 1,
-          icon: Icons.video_call_rounded,
-        ),
-      );
-
       if (!mounted) return;
       setState(() {
         _confirming = false;
         _slotAvailability[_selectedTime!] = false;
+        _selected = null;
+        _selectedDate = null;
+        _selectedTime = null;
+        _slotAvailability = {};
       });
 
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => CheckoutScreen(
-            total: s.price,
-            cartItems: CartManager().items,
-            onOrderPlaced: () {
-              CartManager().removeItem(bookingId);
-              _db.collection('bookings').doc(bookingId).update({
-                'status': 'confirmed',
-              });
-            },
+      // Show success bottom sheet — booking goes only to My Bookings
+      await showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.transparent,
+        isDismissible: true,
+        builder: (_) => Container(
+          margin: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(28),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1D9E75).withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.check_circle_rounded,
+                  color: Color(0xFF1D9E75),
+                  size: 40,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Booking Submitted!',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                  color: Color(0xFF1A1A1A),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Your session with ${s.name} is pending confirmation.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Colors.black54,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 22),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: orange,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  onPressed: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            MyBookingsScreen(uid: _auth.currentUser?.uid ?? ''),
+                      ),
+                    );
+                  },
+                  child: const Text(
+                    'View My Bookings',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text(
+                  'Back to Consultation',
+                  style: TextStyle(color: Colors.black45, fontSize: 13),
+                ),
+              ),
+            ],
           ),
         ),
       );
@@ -527,7 +565,6 @@ class _ConsultationScreenState extends State<ConsultationScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      resizeToAvoidBottomInset: false,
       backgroundColor: bg,
       appBar: AppBar(
         backgroundColor: bg,
@@ -545,6 +582,46 @@ class _ConsultationScreenState extends State<ConsultationScreen>
           ),
         ),
         centerTitle: true,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: GestureDetector(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      MyBookingsScreen(uid: _auth.currentUser?.uid ?? ''),
+                ),
+              ),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: orange.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: orange.withValues(alpha: 0.35)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Icon(Icons.history_rounded, color: orange, size: 16),
+                    SizedBox(width: 5),
+                    Text(
+                      'My Bookings',
+                      style: TextStyle(
+                        color: orange,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -812,102 +889,6 @@ class _ConsultationScreenState extends State<ConsultationScreen>
               }).toList(),
             ),
         ],
-
-        const SizedBox(height: 20),
-
-        const Text(
-          'Your Address',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 15,
-            color: dark,
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _addressCtrl,
-          style: const TextStyle(fontSize: 14),
-          decoration: InputDecoration(
-            hintText: 'Enter your address',
-            hintStyle: const TextStyle(color: Colors.black38, fontSize: 14),
-            prefixIcon: const Icon(Icons.home_outlined, color: orange),
-            filled: true,
-            fillColor: Colors.white,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: BorderSide.none,
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: const BorderSide(color: orange, width: 2),
-            ),
-          ),
-        ),
-
-        const SizedBox(height: 20),
-
-        const Text(
-          'Pin Your Location',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 15,
-            color: dark,
-          ),
-        ),
-        const SizedBox(height: 12),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: SizedBox(
-            height: 200,
-            child: Stack(
-              children: [
-                GoogleMap(
-                  initialCameraPosition: CameraPosition(
-                    target: _pinLocation ?? _defaultLatLng,
-                    zoom: 14,
-                  ),
-                  onMapCreated: (c) => _mapCtrl = c,
-                  markers: _pinLocation != null
-                      ? {
-                          Marker(
-                            markerId: const MarkerId('pin'),
-                            position: _pinLocation!,
-                          ),
-                        }
-                      : {},
-                  onTap: (ll) => setState(() => _pinLocation = ll),
-                  myLocationButtonEnabled: false,
-                  zoomControlsEnabled: false,
-                ),
-                Positioned(
-                  bottom: 12,
-                  right: 12,
-                  child: GestureDetector(
-                    onTap: _getCurrentLocation,
-                    child: Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.1),
-                            blurRadius: 8,
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.my_location_rounded,
-                        color: orange,
-                        size: 20,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
 
         const SizedBox(height: 24),
         if (_selectedTime != null) _buildConfirmCard(),
@@ -1306,6 +1287,700 @@ class _SpecialistCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  MY BOOKINGS SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
+class MyBookingsScreen extends StatelessWidget {
+  final String uid;
+  const MyBookingsScreen({super.key, required this.uid});
+
+  static const Color orange = Color(0xFFF37E33);
+  static const Color bg = Color(0xFFF8F4EF);
+  static const Color dark = Color(0xFF1A1A1A);
+
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'confirmed':
+        return const Color(0xFF1D9E75);
+      case 'cancelled':
+        return Colors.red;
+      default:
+        return orange;
+    }
+  }
+
+  IconData _statusIcon(String status) {
+    switch (status) {
+      case 'confirmed':
+        return Icons.check_circle_rounded;
+      case 'cancelled':
+        return Icons.cancel_rounded;
+      default:
+        return Icons.hourglass_top_rounded;
+    }
+  }
+
+  String _statusLabel(String status) {
+    switch (status) {
+      case 'confirmed':
+        return 'Confirmed';
+      case 'cancelled':
+        return 'Cancelled';
+      default:
+        return 'Pending';
+    }
+  }
+
+  IconData _typeIcon(String type) => type == 'nutritionist'
+      ? Icons.restaurant_menu_rounded
+      : Icons.fitness_center_rounded;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: bg,
+      appBar: AppBar(
+        backgroundColor: bg,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: dark),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          'My Bookings',
+          style: TextStyle(
+            color: dark,
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
+        ),
+        centerTitle: true,
+      ),
+      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance
+            .collection('bookings')
+            .where('userId', isEqualTo: uid)
+            .snapshots(),
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(color: orange),
+            );
+          }
+          if (snap.hasError) {
+            return Center(
+              child: Text(
+                'Could not load bookings.\n${snap.error}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.black54, fontSize: 13),
+              ),
+            );
+          }
+          final docs = (snap.data?.docs ?? [])
+            ..sort((a, b) {
+              final aTs = a.data()['createdAt'];
+              final bTs = b.data()['createdAt'];
+              if (aTs == null && bTs == null) return 0;
+              if (aTs == null) return 1;
+              if (bTs == null) return -1;
+              return (bTs as dynamic).compareTo(aTs as dynamic);
+            });
+          if (docs.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 90,
+                    height: 90,
+                    decoration: BoxDecoration(
+                      color: orange.withValues(alpha: 0.08),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.calendar_today_rounded,
+                      size: 40,
+                      color: orange.withValues(alpha: 0.5),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  const Text(
+                    'No bookings yet',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                      color: dark,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Your consultation bookings will appear here',
+                    style: TextStyle(fontSize: 13, color: Colors.black45),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return ListView.separated(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+            itemCount: docs.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 12),
+            itemBuilder: (_, i) {
+              final d = docs[i].data();
+              final status = d['status'] as String? ?? 'pending';
+              final name = d['specialistName'] as String? ?? '—';
+              final type = d['specialistType'] as String? ?? 'pt';
+              final spec = d['specialty'] as String? ?? '—';
+              final date = d['date'] as String? ?? '—';
+              final time = d['time'] as String? ?? '—';
+              final price = (d['price'] as num?)?.toDouble() ?? 0;
+
+              return GestureDetector(
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        _BookingDetailScreen(docId: docs[i].id, data: d),
+                  ),
+                ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.06),
+                        blurRadius: 14,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      // ── Card header ──────────────────────────────────────
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+                        child: Row(
+                          children: [
+                            // Type icon circle
+                            Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: orange.withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(13),
+                              ),
+                              child: Icon(
+                                _typeIcon(type),
+                                color: orange,
+                                size: 20,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            // Name + specialty
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    name,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                      color: dark,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    spec,
+                                    style: const TextStyle(
+                                      fontSize: 11.5,
+                                      color: Colors.black45,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            // Status badge
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: _statusColor(
+                                  status,
+                                ).withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: _statusColor(
+                                    status,
+                                  ).withValues(alpha: 0.4),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    _statusIcon(status),
+                                    size: 12,
+                                    color: _statusColor(status),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _statusLabel(status),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: _statusColor(status),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      Divider(
+                        height: 1,
+                        color: Colors.black.withValues(alpha: 0.06),
+                      ),
+
+                      // ── Date / time / price row ──────────────────────────
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.calendar_today_rounded,
+                              size: 13,
+                              color: Colors.black38,
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              date,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.black54,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Icon(
+                              Icons.access_time_rounded,
+                              size: 13,
+                              color: Colors.black38,
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              time,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.black54,
+                              ),
+                            ),
+                            const Spacer(),
+                            Text(
+                              '\$${price.toStringAsFixed(0)}/hr',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 14,
+                                color: dark,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            const Icon(
+                              Icons.chevron_right_rounded,
+                              color: Colors.black26,
+                              size: 18,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  BOOKING DETAIL SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
+class _BookingDetailScreen extends StatelessWidget {
+  final String docId;
+  final Map<String, dynamic> data;
+  const _BookingDetailScreen({required this.docId, required this.data});
+
+  static const Color orange = Color(0xFFF37E33);
+  static const Color bg = Color(0xFFF8F4EF);
+  static const Color dark = Color(0xFF1A1A1A);
+
+  Color _statusColor(String s) {
+    switch (s) {
+      case 'confirmed':
+        return const Color(0xFF1D9E75);
+      case 'cancelled':
+        return Colors.red;
+      default:
+        return orange;
+    }
+  }
+
+  IconData _statusIcon(String s) {
+    switch (s) {
+      case 'confirmed':
+        return Icons.check_circle_rounded;
+      case 'cancelled':
+        return Icons.cancel_rounded;
+      default:
+        return Icons.hourglass_top_rounded;
+    }
+  }
+
+  String _statusLabel(String s) {
+    switch (s) {
+      case 'confirmed':
+        return 'Confirmed';
+      case 'cancelled':
+        return 'Cancelled';
+      default:
+        return 'Pending';
+    }
+  }
+
+  String _statusMessage(String s) {
+    switch (s) {
+      case 'confirmed':
+        return 'Your session is confirmed! The specialist will be in touch soon.';
+      case 'cancelled':
+        return 'This booking has been cancelled.';
+      default:
+        return 'Your booking is awaiting confirmation. We\'ll notify you shortly.';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Pull data fields
+    final status = data['status'] as String? ?? 'pending';
+    final name = data['specialistName'] as String? ?? '—';
+    final type = data['specialistType'] as String? ?? 'pt';
+    final spec = data['specialty'] as String? ?? '—';
+    final date = data['date'] as String? ?? '—';
+    final time = data['time'] as String? ?? '—';
+    final price = (data['price'] as num?)?.toDouble() ?? 0;
+    final typeIcon = type == 'nutritionist'
+        ? Icons.restaurant_menu_rounded
+        : Icons.fitness_center_rounded;
+
+    final statusColor = _statusColor(status);
+
+    return Scaffold(
+      backgroundColor: bg,
+      appBar: AppBar(
+        backgroundColor: bg,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: dark),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          'Booking Details',
+          style: TextStyle(
+            color: dark,
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
+        ),
+        centerTitle: true,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
+        children: [
+          // ── Status banner ──────────────────────────────────────────────────
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    _statusIcon(status),
+                    color: statusColor,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _statusLabel(status),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                          color: statusColor,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        _statusMessage(status),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.black54,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // ── Specialist card ────────────────────────────────────────────────
+          _section(
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: orange.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(typeIcon, color: orange, size: 22),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                          color: dark,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        spec,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.black45,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 14),
+
+          // ── Session info ───────────────────────────────────────────────────
+          _section(
+            child: Column(
+              children: [
+                _row(Icons.calendar_today_rounded, 'Date', date),
+                const SizedBox(height: 12),
+                _row(Icons.access_time_rounded, 'Time', time),
+                const SizedBox(height: 12),
+                _row(
+                  Icons.attach_money_rounded,
+                  'Session Fee',
+                  '\$${price.toStringAsFixed(0)}/hr',
+                  valueStyle: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                    color: dark,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 14),
+
+          // ── Booking ref ────────────────────────────────────────────────────
+          _section(
+            child: _row(
+              Icons.confirmation_number_outlined,
+              'Booking ID',
+              docId,
+              mono: true,
+            ),
+          ),
+
+          const SizedBox(height: 28),
+
+          // ── Status steps tracker ───────────────────────────────────────────
+          _section(child: _buildStatusTracker(status)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusTracker(String status) {
+    const steps = ['pending', 'confirmed'];
+    final isCancelled = status == 'cancelled';
+
+    if (isCancelled) {
+      return Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.red.withValues(alpha: 0.10),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.cancel_rounded,
+              color: Colors.red,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Text(
+            'Booking cancelled',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+              color: Colors.red,
+            ),
+          ),
+        ],
+      );
+    }
+
+    final currentIdx = steps.indexOf(status);
+    final stepLabels = ['Pending', 'Confirmed'];
+    final stepIcons = [Icons.hourglass_top_rounded, Icons.check_circle_rounded];
+
+    return Row(
+      children: List.generate(steps.length * 2 - 1, (i) {
+        if (i.isOdd) {
+          return Expanded(
+            child: Container(
+              height: 3,
+              decoration: BoxDecoration(
+                color: i ~/ 2 < currentIdx ? orange : Colors.black12,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          );
+        }
+        final idx = i ~/ 2;
+        final done = idx <= currentIdx;
+        return Column(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: done ? orange : Colors.black12,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                stepIcons[idx],
+                size: 17,
+                color: done ? Colors.white : Colors.black38,
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              stepLabels[idx],
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: done ? FontWeight.w700 : FontWeight.w400,
+                color: done ? orange : Colors.black38,
+              ),
+            ),
+          ],
+        );
+      }),
+    );
+  }
+
+  Widget _section({required Widget child}) => Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.05),
+          blurRadius: 12,
+          offset: const Offset(0, 3),
+        ),
+      ],
+    ),
+    child: child,
+  );
+
+  Widget _row(
+    IconData icon,
+    String label,
+    String value, {
+    TextStyle? valueStyle,
+    bool mono = false,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 16, color: orange),
+        const SizedBox(width: 10),
+        SizedBox(
+          width: 90,
+          child: Text(
+            label,
+            style: const TextStyle(fontSize: 12, color: Colors.black45),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style:
+                valueStyle ??
+                TextStyle(
+                  fontFamily: mono ? 'monospace' : null,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: dark,
+                ),
+            overflow: TextOverflow.ellipsis,
+            maxLines: 2,
+          ),
+        ),
+      ],
     );
   }
 }
