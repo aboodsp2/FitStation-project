@@ -7,8 +7,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'app_theme.dart';
 import 'admin_screen.dart';
-import 'driver_signup_screen.dart';
 import 'driver_dashboard_screen.dart';
+import 'driver_signup_screen.dart';
 
 // ─── GUEST MANAGER ───────────────────────────────────────────────────────────
 class GuestManager {
@@ -71,7 +71,9 @@ class GuestManager {
             onPressed: () {
               GuestManager().setGuest(false);
               Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (_) => const AuthFlowHandler()),
+                MaterialPageRoute(
+                  builder: (_) => const AuthFlowHandler(startAtLogin: true),
+                ),
                 (route) => false,
               );
             },
@@ -92,15 +94,23 @@ class GuestManager {
 }
 
 class AuthFlowHandler extends StatefulWidget {
-  const AuthFlowHandler({super.key});
+  /// When [startAtLogin] is true the handler skips the intro and lands
+  /// directly on the Sign-In page. Use this after sign-out.
+  final bool startAtLogin;
+  const AuthFlowHandler({super.key, this.startAtLogin = false});
   @override
   State<AuthFlowHandler> createState() => _AuthFlowHandlerState();
 }
 
 class _AuthFlowHandlerState extends State<AuthFlowHandler> {
-  final _pageCtrl = PageController();
+  late final PageController _pageCtrl;
   String _tempName = "";
-  String _tempRole = "customer";
+
+  @override
+  void initState() {
+    super.initState();
+    _pageCtrl = PageController(initialPage: widget.startAtLogin ? 1 : 0);
+  }
 
   void _go(int page) => _pageCtrl.animateToPage(
     page,
@@ -119,20 +129,12 @@ class _AuthFlowHandlerState extends State<AuthFlowHandler> {
           SignInPage(onSignUpTap: () => _go(2)),
           SignUpPage(
             onLoginTap: () => _go(1),
-            onVerificationSent: (name, role) {
-              setState(() {
-                _tempName = name;
-                _tempRole = role;
-              });
+            onVerificationSent: (name) {
+              setState(() => _tempName = name);
               _go(3);
             },
           ),
-          _tempRole == 'restaurant'
-              ? RestaurantApplicationSentPage(onBackToLogin: () => _go(1))
-              : VerifyEmailPage(
-                  onBackToLogin: () => _go(2),
-                  fullName: _tempName,
-                ),
+          VerifyEmailPage(onBackToLogin: () => _go(2), fullName: _tempName),
         ],
       ),
     );
@@ -560,123 +562,15 @@ class _SignInPageState extends State<SignInPage> {
     }
   }
 
-  Future<void> _forgotPassword() async {
-    final emailCtrl = TextEditingController(text: _emailCtrl.text.trim());
-    await showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          'Reset Password',
-          style: TextStyle(
-            fontFamily: 'Poppins',
-            fontWeight: FontWeight.w700,
-            fontSize: 17,
-            color: AppTheme.dark,
-          ),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Enter your email address and we\'ll send you a link to reset your password.',
-              style: TextStyle(
-                fontFamily: 'Poppins',
-                fontSize: 13,
-                color: AppTheme.muted,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: emailCtrl,
-              keyboardType: TextInputType.emailAddress,
-              style: const TextStyle(fontFamily: 'Poppins', fontSize: 14),
-              decoration: InputDecoration(
-                prefixIcon: const Icon(Icons.email_outlined, color: AppTheme.primary),
-                hintText: 'Email address',
-                hintStyle: const TextStyle(fontFamily: 'Poppins', color: AppTheme.muted),
-                filled: true,
-                fillColor: AppTheme.background,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(fontFamily: 'Poppins', color: AppTheme.muted),
-            ),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primary,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            onPressed: () async {
-              final email = emailCtrl.text.trim();
-              if (email.isEmpty) return;
-              Navigator.pop(ctx);
-              try {
-                await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: const Text(
-                        'Password reset email sent. Check your inbox.',
-                        style: TextStyle(fontFamily: 'Poppins'),
-                      ),
-                      backgroundColor: Colors.green.shade700,
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  );
-                }
-              } on FirebaseAuthException catch (e) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        e.message ?? 'Failed to send reset email.',
-                        style: const TextStyle(fontFamily: 'Poppins'),
-                      ),
-                      backgroundColor: Colors.redAccent,
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  );
-                }
-              }
-            },
-            child: const Text(
-              'Send',
-              style: TextStyle(fontFamily: 'Poppins', color: Colors.white, fontWeight: FontWeight.w700),
-            ),
-          ),
-        ],
-      ),
-    );
-    emailCtrl.dispose();
-  }
-
   Future<void> _login() async {
     if (_emailCtrl.text.isEmpty || _passwordCtrl.text.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Please fill all fields")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please fill all fields")),
+      );
       return;
     }
     setState(() => _loading = true);
     try {
-      // Save email preference
       final prefs = await SharedPreferences.getInstance();
       if (_rememberEmail) {
         await prefs.setString(_kEmail, _emailCtrl.text.trim());
@@ -692,10 +586,7 @@ class _SignInPageState extends State<SignInPage> {
       );
       GuestManager().setGuest(false);
 
-      // Check if admin
-      final adminRole = await AdminChecker.check(
-        _emailCtrl.text.trim().toLowerCase(),
-      );
+      final adminRole = await AdminChecker.check(_emailCtrl.text.trim().toLowerCase());
 
       if (!mounted) return;
       if (adminRole != null) {
@@ -703,63 +594,55 @@ class _SignInPageState extends State<SignInPage> {
           context,
           MaterialPageRoute(builder: (_) => AdminScreen(role: adminRole)),
         );
+        return;
+      }
+
+      // Check for pending restaurant/driver application
+      final pendingSnap = await FirebaseFirestore.instance
+          .collection('registrationRequests')
+          .where('ownerEmail', isEqualTo: _emailCtrl.text.trim().toLowerCase())
+          .where('status', isEqualTo: 'pending')
+          .limit(1)
+          .get();
+
+      if (!mounted) return;
+      if (pendingSnap.docs.isNotEmpty) {
+        final type = pendingSnap.docs.first.data()['type'] as String? ?? 'restaurant';
+        final messenger = ScaffoldMessenger.of(context);
+        await FirebaseAuth.instance.signOut();
+        setState(() => _loading = false);
+        messenger.showSnackBar(SnackBar(
+          content: Text(type == 'driver'
+              ? 'Your driver application is still pending admin approval.'
+              : 'Your restaurant application is still pending admin approval.'),
+        ));
+        return;
+      }
+
+      // Check if this user is a driver
+      final driverDoc = await FirebaseFirestore.instance
+          .collection('drivers')
+          .doc(FirebaseAuth.instance.currentUser!.uid)
+          .get();
+
+      if (!mounted) return;
+      if (driverDoc.exists) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const DriverDashboardScreen()),
+        );
       } else {
-        // Check if this is a pending restaurant application
-        final pendingSnap = await FirebaseFirestore.instance
-            .collection('registrationRequests')
-            .where(
-              'ownerEmail',
-              isEqualTo: _emailCtrl.text.trim().toLowerCase(),
-            )
-            .where('status', isEqualTo: 'pending')
-            .limit(1)
-            .get();
-
-        if (!mounted) return;
-
-        if (pendingSnap.docs.isNotEmpty) {
-          final type = pendingSnap.docs.first.data()['type'] as String? ?? 'restaurant';
-          final messenger = ScaffoldMessenger.of(context);
-          await FirebaseAuth.instance.signOut();
-          setState(() => _loading = false);
-          messenger.showSnackBar(
-            SnackBar(
-              content: Text(
-                type == 'driver'
-                    ? 'Your driver application is still pending admin approval.'
-                    : 'Your restaurant application is still pending admin approval.',
-              ),
-            ),
-          );
-          return;
-        }
-
-        // Check if this user is a driver
-        final driverDoc = await FirebaseFirestore.instance
-            .collection('drivers')
-            .doc(FirebaseAuth.instance.currentUser!.uid)
-            .get();
-
-        if (!mounted) return;
-
-        if (driverDoc.exists) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const DriverDashboardScreen()),
-          );
-        } else {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const DashboardScreen()),
-          );
-        }
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const DashboardScreen()),
+        );
       }
     } on FirebaseAuthException catch (e) {
       if (mounted) {
         setState(() => _loading = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(e.message ?? "Login Failed")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message ?? "Login Failed")),
+        );
       }
     }
   }
@@ -862,26 +745,73 @@ class _SignInPageState extends State<SignInPage> {
                 ],
               ),
             ),
-            const SizedBox(height: 12),
+            // Forgot Password link — below Remember my email
+            SizedBox(height: 20),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 40),
               child: Align(
-                alignment: Alignment.centerRight,
-                child: GestureDetector(
-                  onTap: _forgotPassword,
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: () async {
+                    final email = _emailCtrl.text.trim();
+                    if (email.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            "Enter your email above to reset your password",
+                          ),
+                        ),
+                      );
+                      return;
+                    }
+                    try {
+                      await FirebaseAuth.instance.sendPasswordResetEmail(
+                        email: email,
+                      );
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              "Password reset email sent to $email",
+                            ),
+                            backgroundColor: Colors.green.shade700,
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                        );
+                      }
+                    } on FirebaseAuthException catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              e.message ?? "Failed to send reset email",
+                            ),
+                          ),
+                        );
+                      }
+                    }
+                  },
                   child: const Text(
-                    'Forgot Password?',
+                    "Forgot Password?",
                     style: TextStyle(
                       color: Colors.white70,
                       fontSize: 13,
                       decoration: TextDecoration.underline,
-                      decorationColor: Colors.white70,
+                      decorationColor: Colors.white54,
                     ),
                   ),
                 ),
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 26),
             _loading
                 ? const CircularProgressIndicator(color: Colors.white)
                 : _Button(
@@ -925,10 +855,9 @@ class _SignInPageState extends State<SignInPage> {
 }
 
 // ─── SIGN UP PAGE ─────────────────────────────────────────────────────────────
-// ─── SIGN UP PAGE ─────────────────────────────────────────────────────────────
 class SignUpPage extends StatefulWidget {
   final VoidCallback onLoginTap;
-  final Function(String, String) onVerificationSent; // name, role
+  final Function(String) onVerificationSent;
   const SignUpPage({
     super.key,
     required this.onLoginTap,
@@ -939,141 +868,21 @@ class SignUpPage extends StatefulWidget {
 }
 
 class _SignUpPageState extends State<SignUpPage> {
-  int _step = 0; // 0 = role selection, 1 = fill form
-  String _role = 'customer';
-
-  final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
-  final _confirmCtrl = TextEditingController();
-  final _restNameCtrl = TextEditingController();
-  final _restCuisineCtrl = TextEditingController();
-  final _restPhoneCtrl = TextEditingController();
-  final _restAddressCtrl = TextEditingController();
-  final _restDescCtrl = TextEditingController();
-
-  bool _showPass = false;
-  bool _showConfirm = false;
-  bool _loading = false;
-
-  @override
-  void dispose() {
-    _nameCtrl.dispose();
-    _emailCtrl.dispose();
-    _passwordCtrl.dispose();
-    _confirmCtrl.dispose();
-    _restNameCtrl.dispose();
-    _restCuisineCtrl.dispose();
-    _restPhoneCtrl.dispose();
-    _restAddressCtrl.dispose();
-    _restDescCtrl.dispose();
-    super.dispose();
-  }
-
-  void _snack(String msg) => ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Text(msg, style: const TextStyle(fontFamily: 'Poppins')),
-      behavior: SnackBarBehavior.floating,
-      backgroundColor: Colors.black87,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ),
-  );
-
-  Future<void> _signUp() async {
-    if (_nameCtrl.text.trim().isEmpty ||
-        _emailCtrl.text.trim().isEmpty ||
-        _passwordCtrl.text.isEmpty ||
-        _confirmCtrl.text.isEmpty) {
-      _snack('Please fill all fields');
-      return;
-    }
-
-    if (_passwordCtrl.text != _confirmCtrl.text) {
-      _snack('Passwords do not match');
-      return;
-    }
-
-    if (_passwordCtrl.text.length < 6) {
-      _snack('Password must be at least 6 characters');
-      return;
-    }
-
-    if (_role == 'restaurant' &&
-        (_restNameCtrl.text.trim().isEmpty ||
-            _restCuisineCtrl.text.trim().isEmpty ||
-            _restPhoneCtrl.text.trim().isEmpty ||
-            _restAddressCtrl.text.trim().isEmpty)) {
-      _snack('Please fill all restaurant details');
-      return;
-    }
-
-    setState(() => _loading = true);
-
-    try {
-      final email = _emailCtrl.text.trim();
-      final password = _passwordCtrl.text.trim();
-      final name = _nameCtrl.text.trim();
-
-      // ── RESTAURANT FLOW: create Firebase Auth account then wait for approval ──
-      if (_role == 'restaurant') {
-        final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-          email: email,
-          password: password,
-        );
-        // Sign out immediately — they cannot use the app until admin approves
-        await FirebaseAuth.instance.signOut();
-
-        await FirebaseFirestore.instance
-            .collection('registrationRequests')
-            .add({
-              'type': 'restaurant',
-              'status': 'pending',
-              'ownerName': name,
-              'ownerEmail': email,
-              'uid': cred.user!.uid,
-              'restaurantName': _restNameCtrl.text.trim(),
-              'cuisine': _restCuisineCtrl.text.trim(),
-              'phone': _restPhoneCtrl.text.trim(),
-              'address': _restAddressCtrl.text.trim(),
-              'description': _restDescCtrl.text.trim(),
-              'createdAt': FieldValue.serverTimestamp(),
-            });
-
-        widget.onVerificationSent(name, _role);
-        return;
-      }
-
-      // ── CUSTOMER FLOW: create FirebaseAuth account normally ──
-      final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-
-      await cred.user?.sendEmailVerification();
-
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(cred.user!.uid)
-          .set({
-            'name': name,
-            'email': email,
-            'role': _role,
-            'createdAt': FieldValue.serverTimestamp(),
-          });
-
-      widget.onVerificationSent(name, _role);
-    } on FirebaseAuthException catch (e) {
-      _snack(e.message ?? 'Sign Up Failed');
-    } catch (e) {
-      debugPrint('Error: $e');
-      _snack('Something went wrong');
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
+  final _confirmPassCtrl = TextEditingController();
+  final _nameCtrl = TextEditingController();
+  bool _showPassword = false;
+  bool _showConfirmPassword = false;
+  String? _selectedRole; // null = role selection, 'customer' = form
 
   @override
   Widget build(BuildContext context) {
+    if (_selectedRole == null) return _buildRoleSelection();
+    return _buildCustomerForm();
+  }
+
+  Widget _buildRoleSelection() {
     return _AuthBg(
       image: 'assets/Sign_up.jpg',
       child: Stack(
@@ -1083,307 +892,73 @@ class _SignUpPageState extends State<SignUpPage> {
               children: [
                 const SizedBox(height: 60),
                 _LogoHeader(),
+                const SizedBox(height: 40),
+                const Text(
+                  'JOIN AS',
+                  style: TextStyle(
+                    fontSize: 40,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Choose how you want to sign up',
+                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                ),
                 const SizedBox(height: 36),
-
-                if (_step == 0) ...[
-                  // ── Step 0: Role selection ────────────────────────────────
-                  const Text(
-                    'JOIN AS',
-                    style: TextStyle(
-                      fontSize: 36,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.white,
-                      letterSpacing: 2,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    'Choose how you want to sign up',
-                    style: TextStyle(color: Colors.white70, fontSize: 14),
-                  ),
-                  const SizedBox(height: 32),
-
-                  _RoleCard(
-                    icon: Icons.person_rounded,
-                    title: 'Customer',
-                    subtitle:
-                        'Browse supplements, meal plans\n& book consultations',
-                    selected: _role == 'customer',
-                    onTap: () => setState(() => _role = 'customer'),
-                  ),
-                  const SizedBox(height: 16),
-                  _RoleCard(
-                    icon: Icons.restaurant_rounded,
-                    title: 'Restaurant Partner',
-                    subtitle:
-                        'List your restaurant & serve\nhealthy meals on FitStation',
-                    selected: _role == 'restaurant',
-                    onTap: () => setState(() => _role = 'restaurant'),
-                  ),
-                  const SizedBox(height: 16),
-                  _RoleCard(
-                    icon: Icons.delivery_dining,
-                    title: 'Driver',
-                    subtitle:
-                        'Deliver orders & earn money\non your own schedule',
-                    selected: _role == 'driver',
-                    onTap: () => setState(() => _role = 'driver'),
-                  ),
-
-                  const SizedBox(height: 36),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 40),
-                    child: GestureDetector(
-                      onTap: () {
-                        if (_role == 'driver') {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const DriverSignupScreen(),
-                            ),
-                          );
-                        } else {
-                          setState(() => _step = 1);
-                        }
-                      },
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        decoration: BoxDecoration(
-                          color: Colors.black,
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Center(
-                          child: Text(
-                            'CONTINUE AS ${_role == 'restaurant' ? 'RESTAURANT' : _role == 'driver' ? 'DRIVER' : 'CUSTOMER'}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 13,
-                              letterSpacing: 0.8,
-                            ),
-                          ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 28),
+                  child: Column(
+                    children: [
+                      _RoleCard(
+                        icon: Icons.person,
+                        title: 'Customer',
+                        description: 'Browse supplements, meal plans & book consultations',
+                        onTap: () => setState(() => _selectedRole = 'customer'),
+                      ),
+                      const SizedBox(height: 14),
+                      _RoleCard(
+                        icon: Icons.restaurant,
+                        title: 'Restaurant Partner',
+                        description: 'List your restaurant & serve healthy meals on FitStation',
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const RestaurantSignupScreen()),
                         ),
                       ),
-                    ),
-                  ),
-                ] else ...[
-                  // ── Step 1: Form ──────────────────────────────────────────
-                  Text(
-                    _role == 'restaurant' ? 'RESTAURANT\nSIGN UP' : 'SIGN UP',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 36,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-
-                  _Input(
-                    icon: Icons.person_outline,
-                    hint: 'Full Name',
-                    controller: _nameCtrl,
-                  ),
-                  _Input(
-                    icon: Icons.email_outlined,
-                    hint: 'Email',
-                    controller: _emailCtrl,
-                  ),
-
-                  // Password
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 40,
-                      vertical: 8,
-                    ),
-                    child: TextField(
-                      controller: _passwordCtrl,
-                      obscureText: !_showPass,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: InputDecoration(
-                        prefixIcon: const Icon(
-                          Icons.lock_outline,
-                          color: Colors.white,
-                        ),
-                        suffixIcon: GestureDetector(
-                          onTap: () => setState(() => _showPass = !_showPass),
-                          child: Icon(
-                            _showPass
-                                ? Icons.visibility_off_rounded
-                                : Icons.visibility_rounded,
-                            color: Colors.white70,
-                            size: 20,
-                          ),
-                        ),
-                        hintText: 'Password',
-                        hintStyle: const TextStyle(color: Colors.white70),
-                        filled: true,
-                        fillColor: Colors.black45,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(15),
-                          borderSide: BorderSide.none,
+                      const SizedBox(height: 14),
+                      _RoleCard(
+                        icon: Icons.delivery_dining,
+                        title: 'Driver',
+                        description: 'Deliver orders & earn money on your own schedule',
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const DriverSignupScreen()),
                         ),
                       ),
-                    ),
+                    ],
                   ),
-
-                  // Confirm password
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 40,
-                      vertical: 8,
-                    ),
-                    child: TextField(
-                      controller: _confirmCtrl,
-                      obscureText: !_showConfirm,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: InputDecoration(
-                        prefixIcon: const Icon(
-                          Icons.lock_outline,
-                          color: Colors.white,
-                        ),
-                        suffixIcon: GestureDetector(
-                          onTap: () =>
-                              setState(() => _showConfirm = !_showConfirm),
-                          child: Icon(
-                            _showConfirm
-                                ? Icons.visibility_off_rounded
-                                : Icons.visibility_rounded,
-                            color: Colors.white70,
-                            size: 20,
-                          ),
-                        ),
-                        hintText: 'Confirm Password',
-                        hintStyle: const TextStyle(color: Colors.white70),
-                        filled: true,
-                        fillColor: Colors.black45,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(15),
-                          borderSide: BorderSide.none,
-                        ),
-                      ),
-                    ),
+                ),
+                const SizedBox(height: 30),
+                TextButton(
+                  onPressed: widget.onLoginTap,
+                  child: const Text(
+                    'Already have an account? LOG IN',
+                    style: TextStyle(color: Colors.white70),
                   ),
-
-                  // Restaurant extra fields
-                  if (_role == 'restaurant') ...[
-                    const SizedBox(height: 10),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 40),
-                      child: Container(height: 1, color: Colors.white24),
-                    ),
-                    const SizedBox(height: 10),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 40),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          'RESTAURANT DETAILS',
-                          style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 11,
-                            letterSpacing: 2,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _Input(
-                      icon: Icons.storefront_rounded,
-                      hint: 'Restaurant Name',
-                      controller: _restNameCtrl,
-                    ),
-                    _Input(
-                      icon: Icons.restaurant_menu_rounded,
-                      hint: 'Cuisine Type (e.g. Healthy · Bowls)',
-                      controller: _restCuisineCtrl,
-                    ),
-                    _Input(
-                      icon: Icons.phone_rounded,
-                      hint: 'Phone Number',
-                      controller: _restPhoneCtrl,
-                    ),
-                    _Input(
-                      icon: Icons.location_on_rounded,
-                      hint: 'Address',
-                      controller: _restAddressCtrl,
-                    ),
-                    _Input(
-                      icon: Icons.description_rounded,
-                      hint: 'Brief Description (optional)',
-                      controller: _restDescCtrl,
-                    ),
-                    const SizedBox(height: 8),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 40),
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.amber.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: Colors.amber.withOpacity(0.4),
-                          ),
-                        ),
-                        child: const Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(
-                              Icons.info_outline_rounded,
-                              color: Colors.amber,
-                              size: 16,
-                            ),
-                            SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Your application will be reviewed by our team. You will receive an email once approved.',
-                                style: TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 11,
-                                  fontFamily: 'Poppins',
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-
-                  const SizedBox(height: 24),
-                  _loading
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : _Button(
-                          label: _role == 'restaurant'
-                              ? 'SUBMIT APPLICATION'
-                              : 'SIGN UP',
-                          color: Colors.black,
-                          textColor: Colors.white,
-                          onTap: _signUp,
-                        ),
-                ],
-
-                const SizedBox(height: 60),
+                ),
+                const SizedBox(height: 30),
               ],
             ),
           ),
-
-          // Back button
           Positioned(
             top: 10,
             left: 10,
             child: SafeArea(
               child: IconButton(
-                icon: const Icon(
-                  Icons.arrow_back_ios_new,
-                  color: Colors.white,
-                  size: 28,
-                ),
-                onPressed: _step == 1
-                    ? () => setState(() => _step = 0)
-                    : widget.onLoginTap,
+                icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 30),
+                onPressed: widget.onLoginTap,
               ),
             ),
           ),
@@ -1391,318 +966,138 @@ class _SignUpPageState extends State<SignUpPage> {
       ),
     );
   }
-}
 
-// ── Role card widget ──────────────────────────────────────────────────────────
-class _RoleCard extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _RoleCard({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 40),
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: selected
-                ? Colors.white.withOpacity(0.95)
-                : Colors.white.withOpacity(0.12),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: selected ? Colors.white : Colors.white30,
-              width: selected ? 2 : 1,
+  Widget _buildCustomerForm() {
+    return _AuthBg(
+      image: 'assets/Sign_up.jpg',
+      child: Stack(
+        children: [
+          SingleChildScrollView(
+            child: Column(
+              children: [
+                const SizedBox(height: 60),
+                _LogoHeader(),
+                const SizedBox(height: 80),
+                const Text(
+                  'SIGN UP',
+                  style: TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+                const SizedBox(height: 20),
+                _Input(icon: Icons.person_outline, hint: 'Full Name', controller: _nameCtrl),
+                _Input(icon: Icons.email_outlined, hint: 'Email', controller: _emailCtrl),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 8),
+                  child: TextField(
+                    controller: _passwordCtrl,
+                    obscureText: !_showPassword,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.lock_outline, color: Colors.white),
+                      suffixIcon: GestureDetector(
+                        onTap: () => setState(() => _showPassword = !_showPassword),
+                        child: Icon(
+                          _showPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                          color: Colors.white70, size: 20,
+                        ),
+                      ),
+                      hintText: 'Password',
+                      hintStyle: const TextStyle(color: Colors.white70),
+                      filled: true,
+                      fillColor: Colors.black45,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 8),
+                  child: TextField(
+                    controller: _confirmPassCtrl,
+                    obscureText: !_showConfirmPassword,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.lock_outline, color: Colors.white),
+                      suffixIcon: GestureDetector(
+                        onTap: () => setState(() => _showConfirmPassword = !_showConfirmPassword),
+                        child: Icon(
+                          _showConfirmPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                          color: Colors.white70, size: 20,
+                        ),
+                      ),
+                      hintText: 'Confirm Password',
+                      hintStyle: const TextStyle(color: Colors.white70),
+                      filled: true,
+                      fillColor: Colors.black45,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 30),
+                _Button(label: 'SIGN UP', color: Colors.black, textColor: Colors.white, onTap: _signUp),
+                const SizedBox(height: 60),
+              ],
             ),
           ),
-          child: Row(
-            children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: selected
-                      ? const Color(0xFF5C3D2E)
-                      : Colors.white.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Icon(icon, color: Colors.white, size: 26),
+          Positioned(
+            top: 10,
+            left: 10,
+            child: SafeArea(
+              child: IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 30),
+                onPressed: () => setState(() => _selectedRole = null),
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: selected
-                            ? const Color(0xFF3B2214)
-                            : Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: 11,
-                        color: selected
-                            ? const Color(0xFF7A5C3E)
-                            : Colors.white60,
-                        height: 1.4,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (selected)
-                const Icon(
-                  Icons.check_circle_rounded,
-                  color: Color(0xFF5C3D2E),
-                  size: 24,
-                ),
-            ],
+            ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─── RESTAURANT APPLICATION SENT PAGE ───────────────────────────────────────
-class RestaurantApplicationSentPage extends StatelessWidget {
-  final VoidCallback onBackToLogin;
-  const RestaurantApplicationSentPage({super.key, required this.onBackToLogin});
-
-  @override
-  Widget build(BuildContext context) {
-    final email = FirebaseAuth.instance.currentUser?.email ?? '';
-    return Scaffold(
-      backgroundColor: AppTheme.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Padding(
-                padding: const EdgeInsets.only(left: 12, top: 8),
-                child: GestureDetector(
-                  onTap: () async {
-                    await FirebaseAuth.instance.signOut();
-                    onBackToLogin();
-                  },
-                  child: Container(
-                    width: 42,
-                    height: 42,
-                    decoration: AppTheme.card(radius: 14),
-                    child: const Icon(
-                      Icons.arrow_back_ios_new_rounded,
-                      color: AppTheme.primary,
-                      size: 18,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const Spacer(),
-            // Icon
-            Container(
-              width: 110,
-              height: 110,
-              decoration: BoxDecoration(
-                color: AppTheme.primary,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: AppTheme.primary.withOpacity(0.35),
-                    blurRadius: 30,
-                    offset: const Offset(0, 10),
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.restaurant_rounded,
-                color: Colors.white,
-                size: 50,
-              ),
-            ),
-            const SizedBox(height: 36),
-            Text(
-              'Application Submitted! 🎉',
-              style: AppTheme.heading.copyWith(
-                fontSize: 24,
-                letterSpacing: 0.3,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 36),
-              child: Text(
-                'Your restaurant application has been sent to FitStation for review.',
-                textAlign: TextAlign.center,
-                style: AppTheme.body.copyWith(fontSize: 15, height: 1.6),
-              ),
-            ),
-            const SizedBox(height: 20),
-            // Email box
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 36),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              decoration: BoxDecoration(
-                color: AppTheme.accent.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppTheme.accent.withOpacity(0.3)),
-              ),
-              child: Column(
-                children: [
-                  Text(
-                    'We will notify you soon ',
-                    style: AppTheme.body.copyWith(fontSize: 13),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    email,
-                    style: AppTheme.subheading.copyWith(
-                      fontSize: 2,
-                      color: AppTheme.primary,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            // Steps
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 36),
-              child: Column(
-                children: [
-                  _appStep(
-                    Icons.hourglass_top_rounded,
-                    'Our team reviews your application',
-                  ),
-                  const SizedBox(height: 10),
-                  _appStep(
-                    Icons.email_rounded,
-                    'You receive an approval or feedback email',
-                  ),
-                  const SizedBox(height: 10),
-                  _appStep(
-                    Icons.check_circle_rounded,
-                    'If approved, log in and manage your restaurant',
-                  ),
-                ],
-              ),
-            ),
-            const Spacer(),
-            // Also verify email notice
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 28),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.amber.withOpacity(0.10),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.amber.withOpacity(0.3)),
-              ),
-              child: const Row(
-                children: [
-                  Icon(
-                    Icons.info_outline_rounded,
-                    color: Colors.amber,
-                    size: 18,
-                  ),
-                  SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Please also verify your email by clicking the link we sent you.',
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: 12,
-                        color: AppTheme.dark,
-                        height: 1.4,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 28),
-              child: SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: () async {
-                    await FirebaseAuth.instance.signOut();
-                    onBackToLogin();
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primary,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    elevation: 6,
-                    shadowColor: AppTheme.primary.withOpacity(0.4),
-                  ),
-                  child: const Text(
-                    'BACK TO LOGIN',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                      letterSpacing: 0.8,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 30),
-          ],
-        ),
+        ],
       ),
     );
   }
 
-  Widget _appStep(IconData icon, String text) => Row(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Container(
-        width: 32,
-        height: 32,
-        decoration: BoxDecoration(
-          color: AppTheme.accent.withOpacity(0.12),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Icon(icon, color: AppTheme.primary, size: 16),
-      ),
-      const SizedBox(width: 12),
-      Expanded(
-        child: Padding(
-          padding: const EdgeInsets.only(top: 6),
-          child: Text(text, style: AppTheme.body.copyWith(fontSize: 13)),
-        ),
-      ),
-    ],
-  );
+  Future<void> _signUp() async {
+    if (_emailCtrl.text.isEmpty ||
+        _passwordCtrl.text.isEmpty ||
+        _confirmPassCtrl.text.isEmpty ||
+        _nameCtrl.text.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Please fill all fields")));
+      return;
+    }
+    if (_passwordCtrl.text != _confirmPassCtrl.text) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Passwords do not match")));
+      return;
+    }
+    if (_passwordCtrl.text.length < 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Password must be at least 6 characters")),
+      );
+      return;
+    }
+    try {
+      final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: _emailCtrl.text.trim(),
+        password: _passwordCtrl.text.trim(),
+      );
+      await cred.user?.sendEmailVerification();
+      widget.onVerificationSent(_nameCtrl.text.trim());
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(cred.user!.uid)
+          .set({
+            'name': _nameCtrl.text.trim(),
+            'email': _emailCtrl.text.trim(),
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+    } on FirebaseAuthException catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message ?? "Sign Up Failed")));
+    } catch (e) {
+      debugPrint("Firestore Error: $e");
+    }
+  }
+
 }
 
 // ─── REUSABLE WIDGETS ────────────────────────────────────────────────────────
@@ -1806,4 +1201,415 @@ class _AuthBg extends StatelessWidget {
       SafeArea(child: child),
     ],
   );
+}
+
+// ─── ROLE CARD ───────────────────────────────────────────────────────────────
+class _RoleCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String description;
+  final VoidCallback onTap;
+
+  const _RoleCard({
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withOpacity(0.3), width: 1.5),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: Colors.white, size: 26),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    description,
+                    style: const TextStyle(fontSize: 12, color: Colors.white70, height: 1.4),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: Colors.white54),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── RESTAURANT SIGNUP SCREEN ────────────────────────────────────────────────
+class RestaurantSignupScreen extends StatefulWidget {
+  const RestaurantSignupScreen({super.key});
+
+  @override
+  State<RestaurantSignupScreen> createState() => _RestaurantSignupScreenState();
+}
+
+class _RestaurantSignupScreenState extends State<RestaurantSignupScreen> {
+  final _restaurantNameCtrl = TextEditingController();
+  final _ownerNameCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _passwordCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+  final _addressCtrl = TextEditingController();
+  bool _isLoading = false;
+  bool _showPassword = false;
+
+  @override
+  void dispose() {
+    _restaurantNameCtrl.dispose();
+    _ownerNameCtrl.dispose();
+    _emailCtrl.dispose();
+    _passwordCtrl.dispose();
+    _phoneCtrl.dispose();
+    _addressCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _register() async {
+    if (_restaurantNameCtrl.text.trim().isEmpty ||
+        _ownerNameCtrl.text.trim().isEmpty ||
+        _emailCtrl.text.trim().isEmpty ||
+        _passwordCtrl.text.trim().isEmpty ||
+        _phoneCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please fill in all required fields')),
+      );
+      return;
+    }
+    if (_passwordCtrl.text.length < 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Password must be at least 6 characters')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      final email = _emailCtrl.text.trim();
+      final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: email,
+        password: _passwordCtrl.text.trim(),
+      );
+      await FirebaseAuth.instance.signOut();
+
+      await FirebaseFirestore.instance.collection('registrationRequests').add({
+        'type': 'restaurant',
+        'status': 'pending',
+        'restaurantName': _restaurantNameCtrl.text.trim(),
+        'ownerName': _ownerNameCtrl.text.trim(),
+        'ownerEmail': email.toLowerCase(),
+        'phone': _phoneCtrl.text.trim(),
+        'address': _addressCtrl.text.trim(),
+        'uid': cred.user!.uid,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => _RestaurantApplicationSentPage(email: email),
+        ),
+      );
+    } on FirebaseAuthException catch (e) {
+      String msg = 'Registration failed';
+      if (e.code == 'email-already-in-use') msg = 'Email already registered';
+      else if (e.code == 'invalid-email') msg = 'Invalid email address';
+      else if (e.code == 'weak-password') msg = 'Password is too weak';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('An error occurred: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.asset('assets/Sign_up.jpg', fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(color: Colors.black)),
+          Container(color: Colors.black.withOpacity(0.72)),
+          SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Align(
+                    alignment: Alignment.topLeft,
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 24),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.change_history, color: Colors.white, size: 24),
+                      SizedBox(width: 10),
+                      Text('FITSTATION',
+                          style: TextStyle(
+                              fontSize: 20, fontWeight: FontWeight.bold,
+                              color: Colors.white, letterSpacing: 2)),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  Center(
+                    child: Container(
+                      width: 80, height: 80,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF5C3D2E),
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [BoxShadow(
+                            color: const Color(0xFF5C3D2E).withOpacity(0.5),
+                            blurRadius: 20, offset: const Offset(0, 10))],
+                      ),
+                      child: const Icon(Icons.restaurant, color: Colors.white, size: 44),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('RESTAURANT SIGNUP',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900,
+                          color: Colors.white, letterSpacing: 2)),
+                  const SizedBox(height: 6),
+                  const Text('Partner with FitStation to reach more customers',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 13, color: Colors.white70)),
+                  const SizedBox(height: 28),
+                  _field(_restaurantNameCtrl, 'Restaurant Name', Icons.storefront_outlined,
+                      cap: TextCapitalization.words),
+                  const SizedBox(height: 14),
+                  _field(_ownerNameCtrl, 'Owner Name', Icons.person_outline,
+                      cap: TextCapitalization.words),
+                  const SizedBox(height: 14),
+                  _field(_emailCtrl, 'Email', Icons.email_outlined,
+                      keyboard: TextInputType.emailAddress),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: _passwordCtrl,
+                    obscureText: !_showPassword,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.lock_outline, color: Colors.white70),
+                      suffixIcon: GestureDetector(
+                        onTap: () => setState(() => _showPassword = !_showPassword),
+                        child: Icon(
+                          _showPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                          color: Colors.white70, size: 20,
+                        ),
+                      ),
+                      hintText: 'Password',
+                      hintStyle: const TextStyle(color: Colors.white54),
+                      filled: true,
+                      fillColor: Colors.black.withOpacity(0.4),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(15),
+                          borderSide: BorderSide(color: Colors.white.withOpacity(0.2))),
+                      enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(15),
+                          borderSide: BorderSide(color: Colors.white.withOpacity(0.2))),
+                      focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(15),
+                          borderSide: const BorderSide(color: Colors.white, width: 1.5)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  _field(_phoneCtrl, 'Phone Number', Icons.phone_outlined,
+                      keyboard: TextInputType.phone),
+                  const SizedBox(height: 14),
+                  _field(_addressCtrl, 'Address (optional)', Icons.location_on_outlined,
+                      cap: TextCapitalization.sentences),
+                  const SizedBox(height: 32),
+                  SizedBox(
+                    height: 56,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _register,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.black,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        elevation: 0,
+                      ),
+                      child: _isLoading
+                          ? const SizedBox(width: 24, height: 24,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
+                          : const Text('REGISTER AS RESTAURANT',
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, letterSpacing: 1.2)),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _field(TextEditingController ctrl, String hint, IconData icon,
+      {TextInputType keyboard = TextInputType.text,
+      TextCapitalization cap = TextCapitalization.none}) {
+    return TextField(
+      controller: ctrl,
+      keyboardType: keyboard,
+      textCapitalization: cap,
+      style: const TextStyle(color: Colors.white),
+      decoration: InputDecoration(
+        prefixIcon: Icon(icon, color: Colors.white70),
+        hintText: hint,
+        hintStyle: const TextStyle(color: Colors.white54),
+        filled: true,
+        fillColor: Colors.black.withOpacity(0.4),
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(15),
+            borderSide: BorderSide(color: Colors.white.withOpacity(0.2))),
+        enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(15),
+            borderSide: BorderSide(color: Colors.white.withOpacity(0.2))),
+        focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(15),
+            borderSide: const BorderSide(color: Colors.white, width: 1.5)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+      ),
+    );
+  }
+}
+
+class _RestaurantApplicationSentPage extends StatelessWidget {
+  final String email;
+  const _RestaurantApplicationSentPage({required this.email});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppTheme.background,
+      body: SafeArea(
+        child: Column(
+          children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 12, top: 8),
+                child: GestureDetector(
+                  onTap: () => Navigator.of(context).popUntil((r) => r.isFirst),
+                  child: Container(
+                    width: 42, height: 42,
+                    decoration: AppTheme.card(radius: 14),
+                    child: const Icon(Icons.arrow_back_ios_new_rounded,
+                        color: AppTheme.primary, size: 18),
+                  ),
+                ),
+              ),
+            ),
+            const Spacer(),
+            Container(
+              width: 110, height: 110,
+              decoration: BoxDecoration(
+                color: AppTheme.primary, shape: BoxShape.circle,
+                boxShadow: [BoxShadow(
+                    color: AppTheme.primary.withValues(alpha: 0.35),
+                    blurRadius: 30, offset: const Offset(0, 10))],
+              ),
+              child: const Icon(Icons.restaurant, color: Colors.white, size: 50),
+            ),
+            const SizedBox(height: 36),
+            Text('Application Submitted!',
+                style: AppTheme.heading.copyWith(fontSize: 24, letterSpacing: 0.3),
+                textAlign: TextAlign.center),
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 36),
+              child: Text(
+                'Your restaurant application has been sent to FitStation for review.',
+                textAlign: TextAlign.center,
+                style: AppTheme.body.copyWith(fontSize: 15, height: 1.6),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 36),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppTheme.accent.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppTheme.accent.withValues(alpha: 0.3)),
+              ),
+              child: Column(
+                children: [
+                  Text('We will notify you at', style: AppTheme.body.copyWith(fontSize: 13)),
+                  const SizedBox(height: 4),
+                  Text(email,
+                      style: AppTheme.subheading.copyWith(fontSize: 13, color: AppTheme.primary),
+                      textAlign: TextAlign.center),
+                ],
+              ),
+            ),
+            const Spacer(),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: SizedBox(
+                width: double.infinity, height: 56,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                    elevation: 6,
+                    shadowColor: AppTheme.primary.withValues(alpha: 0.4),
+                  ),
+                  child: const Text('BACK TO LOGIN',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold,
+                          fontSize: 15, letterSpacing: 0.8)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 30),
+          ],
+        ),
+      ),
+    );
+  }
 }

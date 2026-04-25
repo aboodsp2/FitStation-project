@@ -637,6 +637,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 'qty': i.quantity,
                 'price': i.price,
                 'imageUrl': i.imageUrl,
+                'supplementId': i.id,
+                'type':
+                    i.id.startsWith('meal_') || i.id.startsWith('fitstation_')
+                    ? 'meal'
+                    : 'supplement',
               },
             )
             .toList(),

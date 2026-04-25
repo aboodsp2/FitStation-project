@@ -13,7 +13,7 @@ class DriverOrdersScreen extends StatefulWidget {
 }
 
 class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
-  String _selectedTab = 'available';
+  String _selectedTab = 'mydeliveries';
 
   @override
   Widget build(BuildContext context) {
@@ -45,8 +45,8 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
               ),
               child: Row(
                 children: [
-                  _buildTab('available', 'Available'),
                   _buildTab('mydeliveries', 'My Deliveries'),
+                  _buildTab('available', 'Available'),
                 ],
               ),
             ),

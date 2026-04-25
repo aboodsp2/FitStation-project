@@ -55,11 +55,11 @@ class DriverProfileScreen extends StatelessWidget {
                         ),
                       ]),
                       const SizedBox(height: 16),
-                      _buildMenuSection(context, 'App', [
+                      _buildMenuSection(context, 'Legal', [
                         _MenuItem(
-                          icon: Icons.info_outline,
-                          title: 'About',
-                          onTap: () {},
+                          icon: Icons.gavel_outlined,
+                          title: 'Terms & Conditions',
+                          onTap: () => _showTermsAndConditions(context),
                         ),
                       ]),
                       const SizedBox(height: 24),
@@ -347,6 +347,110 @@ class DriverProfileScreen extends StatelessWidget {
     );
   }
 
+  void _showTermsAndConditions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.85,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (_, controller) => Container(
+          decoration: const BoxDecoration(
+            color: AppTheme.surface,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppTheme.divider,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Text(
+                  'Terms & Conditions',
+                  style: AppTheme.subheading.copyWith(fontSize: 18),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Text(
+                  'Last updated: January 2025',
+                  style: AppTheme.label.copyWith(fontSize: 12),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Divider(height: 1, color: AppTheme.divider),
+              Expanded(
+                child: ListView(
+                  controller: controller,
+                  padding: const EdgeInsets.all(20),
+                  children: [
+                    _TermsSection(
+                      title: '1. Acceptance of Terms',
+                      body:
+                          'By registering as a driver on FitStation, you agree to be bound by these Terms & Conditions. If you do not agree to these terms, you may not use our platform.',
+                    ),
+                    _TermsSection(
+                      title: '2. Driver Eligibility',
+                      body:
+                          'You must be at least 18 years old, hold a valid driving license, and own or have legal access to a vehicle in good working condition. All provided information must be accurate and up to date.',
+                    ),
+                    _TermsSection(
+                      title: '3. Order Acceptance & Conduct',
+                      body:
+                          'Drivers are expected to accept and complete orders in a professional and timely manner. Repeated cancellations or failure to deliver may result in suspension of your account.',
+                    ),
+                    _TermsSection(
+                      title: '4. Delivery Standards',
+                      body:
+                          'All deliveries must be handled with care. Drivers are responsible for ensuring orders are delivered to the correct address in the condition received. Any damage caused during transit is the driver\'s responsibility.',
+                    ),
+                    _TermsSection(
+                      title: '5. Earnings & Payments',
+                      body:
+                          'Earnings are calculated per delivery based on the delivery fee shown in the app. Payments are processed weekly. FitStation reserves the right to adjust fees with prior notice.',
+                    ),
+                    _TermsSection(
+                      title: '6. Privacy & Data',
+                      body:
+                          'Your personal information is collected and used solely to operate the delivery service. We do not sell your data to third parties. Location data is only tracked when you are online and on an active delivery.',
+                    ),
+                    _TermsSection(
+                      title: '7. Account Suspension',
+                      body:
+                          'FitStation reserves the right to suspend or terminate driver accounts for violations of these terms, fraudulent activity, or behaviour that harms customers or the platform.',
+                    ),
+                    _TermsSection(
+                      title: '8. Changes to Terms',
+                      body:
+                          'We may update these Terms & Conditions from time to time. Continued use of the app after changes are posted constitutes your acceptance of the revised terms.',
+                    ),
+                    _TermsSection(
+                      title: '9. Contact',
+                      body:
+                          'For any questions regarding these terms, please contact our support team through the app or at support@fitstation.jo.',
+                    ),
+                    const SizedBox(height: 40),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _signOut(BuildContext context) async {
     final shouldSignOut = await showDialog<bool>(
       context: context,
@@ -410,4 +514,32 @@ class _MenuItem {
     this.subtitle,
     required this.onTap,
   });
+}
+
+class _TermsSection extends StatelessWidget {
+  final String title;
+  final String body;
+
+  const _TermsSection({required this.title, required this.body});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: AppTheme.subheading.copyWith(fontSize: 14),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            body,
+            style: AppTheme.body.copyWith(fontSize: 13, height: 1.6),
+          ),
+        ],
+      ),
+    );
+  }
 }

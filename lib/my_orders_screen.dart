@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -5,7 +6,7 @@ import 'app_theme.dart';
 import 'supplement_store_screen.dart';
 
 // ── Order Status ──────────────────────────────────────────────────────────────
-enum OrderStatus { processing, confirmed, shipped, delivered, cancelled }
+enum OrderStatus { processing, confirmed, assigned, pickedUp, inTransit, shipped, delivered, cancelled }
 
 // ── Order Line Item ───────────────────────────────────────────────────────────
 class OrderLineItem {
@@ -13,11 +14,13 @@ class OrderLineItem {
   final int qty;
   final double price;
   final String imageUrl;
+  final String supplementId;
   const OrderLineItem({
     required this.name,
     required this.qty,
     required this.price,
     this.imageUrl = '',
+    this.supplementId = '',
   });
 }
 
@@ -53,6 +56,12 @@ class Order {
     switch (s) {
       case 'confirmed':
         return OrderStatus.confirmed;
+      case 'assigned':
+        return OrderStatus.assigned;
+      case 'pickedUp':
+        return OrderStatus.pickedUp;
+      case 'inTransit':
+        return OrderStatus.inTransit;
       case 'shipped':
         return OrderStatus.shipped;
       case 'delivered':
@@ -83,6 +92,7 @@ class Order {
           qty: (m['qty'] as num?)?.toInt() ?? 1,
           price: (m['price'] as num?)?.toDouble() ?? 0,
           imageUrl: m['imageUrl'] as String? ?? '',
+          supplementId: m['supplementId'] as String? ?? '',
         );
       }).toList(),
     );
@@ -319,7 +329,11 @@ class _OrderCard extends StatelessWidget {
       case OrderStatus.processing:
         return Colors.orange;
       case OrderStatus.confirmed:
+      case OrderStatus.assigned:
         return Colors.blue;
+      case OrderStatus.pickedUp:
+        return Colors.deepPurple;
+      case OrderStatus.inTransit:
       case OrderStatus.shipped:
         return Colors.purple;
       case OrderStatus.delivered:
@@ -334,9 +348,13 @@ class _OrderCard extends StatelessWidget {
       case OrderStatus.processing:
         return Icons.hourglass_top_rounded;
       case OrderStatus.confirmed:
+      case OrderStatus.assigned:
         return Icons.check_circle_outline_rounded;
+      case OrderStatus.pickedUp:
+        return Icons.storefront_outlined;
+      case OrderStatus.inTransit:
       case OrderStatus.shipped:
-        return Icons.local_shipping_outlined;
+        return Icons.delivery_dining;
       case OrderStatus.delivered:
         return Icons.done_all_rounded;
       case OrderStatus.cancelled:
@@ -536,6 +554,12 @@ class _StatusBadge extends StatelessWidget {
         return 'Processing';
       case OrderStatus.confirmed:
         return 'Confirmed';
+      case OrderStatus.assigned:
+        return 'Driver Assigned';
+      case OrderStatus.pickedUp:
+        return 'Picked Up';
+      case OrderStatus.inTransit:
+        return 'In Transit';
       case OrderStatus.shipped:
         return 'Shipped';
       case OrderStatus.delivered:
@@ -550,7 +574,11 @@ class _StatusBadge extends StatelessWidget {
       case OrderStatus.processing:
         return Colors.orange;
       case OrderStatus.confirmed:
+      case OrderStatus.assigned:
         return Colors.blue;
+      case OrderStatus.pickedUp:
+        return Colors.deepPurple;
+      case OrderStatus.inTransit:
       case OrderStatus.shipped:
         return Colors.purple;
       case OrderStatus.delivered:
@@ -593,17 +621,53 @@ class _OrderDetailScreen extends StatefulWidget {
 }
 
 class _OrderDetailScreenState extends State<_OrderDetailScreen> {
-  Order get order => widget.order;
+  late Order _order;
+  Order get order => _order;
 
   Map<String, int> _ratings = {};
   int _driverRating = 0;
   bool _alreadyRated = false;
   bool _isSubmitting = false;
+  bool _ratingLoaded = false;
+
+  StreamSubscription<DocumentSnapshot>? _sub;
 
   @override
   void initState() {
     super.initState();
-    if (order.status == OrderStatus.delivered) _loadExistingRatings();
+    _order = widget.order;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      _sub = FirebaseFirestore.instance
+          .collection('orders')
+          .doc(user.uid)
+          .collection('userOrders')
+          .doc(widget.order.id)
+          .snapshots()
+          .listen((snap) {
+        if (!snap.exists || !mounted) return;
+        final fresh = Order.fromFirestore(snap.data()!);
+        if (fresh.status == OrderStatus.delivered &&
+            _order.status != OrderStatus.delivered &&
+            !_ratingLoaded) {
+          _ratingLoaded = true;
+          _loadExistingRatings();
+        }
+        setState(() => _order = fresh);
+      });
+    }
+
+    if (_order.status == OrderStatus.delivered) {
+      _ratingLoaded = true;
+      _loadExistingRatings();
+    }
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadExistingRatings() async {
@@ -647,6 +711,31 @@ class _OrderDetailScreenState extends State<_OrderDetailScreen> {
       }
 
       await orderRef.update(updates);
+
+      // Write each item rating to itemRatings collection so admin can see them
+      final batch = db.batch();
+      for (int i = 0; i < order.items.length; i++) {
+        final itemRating = _ratings[i.toString()];
+        if (itemRating != null) {
+          final item = order.items[i];
+          final isMeal =
+              item.supplementId.startsWith('meal_') ||
+              item.supplementId.startsWith('fitstation_') ||
+              item.name.contains('—');
+          batch.set(db.collection('itemRatings').doc(), {
+            'orderId': order.id,
+            'userId': user.uid,
+            'userName': user.displayName ?? user.email ?? '',
+            'itemName': item.name,
+            'imageUrl': item.imageUrl,
+            'supplementId': item.supplementId,
+            'type': isMeal ? 'meal' : 'supplement',
+            'rating': itemRating,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        }
+      }
+      await batch.commit();
 
       // Update driver aggregate rating in a transaction
       if (order.hasDriver && _driverRating > 0) {
@@ -692,41 +781,21 @@ class _OrderDetailScreenState extends State<_OrderDetailScreen> {
 
   String _formatDate(DateTime d) {
     const m = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return '${m[d.month - 1]} ${d.day}, ${d.year}  '
         '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
-  }
-
-  String _stepLabel(OrderStatus s) {
-    switch (s) {
-      case OrderStatus.processing:
-        return 'Processing';
-      case OrderStatus.confirmed:
-        return 'Confirmed';
-      case OrderStatus.shipped:
-        return 'Shipped';
-      case OrderStatus.delivered:
-        return 'Delivered';
-      default:
-        return '';
-    }
-  }
-
-  IconData _stepIcon(OrderStatus s) {
-    switch (s) {
-      case OrderStatus.processing:
-        return Icons.hourglass_top_rounded;
-      case OrderStatus.confirmed:
-        return Icons.check_rounded;
-      case OrderStatus.shipped:
-        return Icons.local_shipping_outlined;
-      case OrderStatus.delivered:
-        return Icons.done_all_rounded;
-      default:
-        return Icons.circle;
-    }
   }
 
   @override
@@ -737,7 +806,10 @@ class _OrderDetailScreenState extends State<_OrderDetailScreen> {
         backgroundColor: AppTheme.background,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: AppTheme.dark),
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: AppTheme.dark,
+          ),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
@@ -770,7 +842,11 @@ class _OrderDetailScreenState extends State<_OrderDetailScreen> {
               decoration: AppTheme.card(radius: 16),
               child: Column(
                 children: [
-                  _infoRow(Icons.location_on_outlined, 'Delivery address', order.address),
+                  _infoRow(
+                    Icons.location_on_outlined,
+                    'Delivery address',
+                    order.address,
+                  ),
                   const SizedBox(height: 12),
                   if (order.phone.isNotEmpty) ...[
                     _infoRow(Icons.phone_outlined, 'Phone', order.phone),
@@ -781,15 +857,24 @@ class _OrderDetailScreenState extends State<_OrderDetailScreen> {
                         ? Icons.credit_card_rounded
                         : Icons.payments_outlined,
                     'Payment',
-                    order.payMethod == 'visa' ? 'Visa card' : 'Cash on delivery',
+                    order.payMethod == 'visa'
+                        ? 'Visa card'
+                        : 'Cash on delivery',
                   ),
                   const SizedBox(height: 12),
-                  _infoRow(Icons.calendar_today_outlined, 'Order date', _formatDate(order.date)),
+                  _infoRow(
+                    Icons.calendar_today_outlined,
+                    'Order date',
+                    _formatDate(order.date),
+                  ),
                   Divider(height: 20, color: AppTheme.divider),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Total', style: AppTheme.subheading.copyWith(fontSize: 15)),
+                      Text(
+                        'Total',
+                        style: AppTheme.subheading.copyWith(fontSize: 15),
+                      ),
                       Text(
                         '${order.total.toStringAsFixed(2)} JD',
                         style: const TextStyle(
@@ -826,7 +911,10 @@ class _OrderDetailScreenState extends State<_OrderDetailScreen> {
         const SizedBox(height: 24),
         Row(
           children: [
-            Text('Rate Your Order', style: AppTheme.subheading.copyWith(fontSize: 15)),
+            Text(
+              'Rate Your Order',
+              style: AppTheme.subheading.copyWith(fontSize: 15),
+            ),
             const SizedBox(width: 8),
             if (_alreadyRated)
               Container(
@@ -854,7 +942,9 @@ class _OrderDetailScreenState extends State<_OrderDetailScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ...order.items.asMap().entries.map((e) => _buildItemRatingRow(e.key, e.value)),
+              ...order.items.asMap().entries.map(
+                (e) => _buildItemRatingRow(e.key, e.value),
+              ),
               if (order.hasDriver) _buildDriverRatingRow(),
               if (!_alreadyRated) ...[
                 const SizedBox(height: 8),
@@ -862,10 +952,14 @@ class _OrderDetailScreenState extends State<_OrderDetailScreen> {
                   width: double.infinity,
                   height: 48,
                   child: ElevatedButton(
-                    onPressed: allRated && !_isSubmitting ? _submitRatings : null,
+                    onPressed: allRated && !_isSubmitting
+                        ? _submitRatings
+                        : null,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.primary,
-                      disabledBackgroundColor: AppTheme.primary.withValues(alpha: 0.3),
+                      disabledBackgroundColor: AppTheme.primary.withValues(
+                        alpha: 0.3,
+                      ),
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -896,11 +990,18 @@ class _OrderDetailScreenState extends State<_OrderDetailScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.check_circle_rounded, color: Colors.green, size: 16),
+                    const Icon(
+                      Icons.check_circle_rounded,
+                      color: Colors.green,
+                      size: 16,
+                    ),
                     const SizedBox(width: 6),
                     Text(
                       'Thank you for your feedback!',
-                      style: AppTheme.body.copyWith(fontSize: 13, color: Colors.green),
+                      style: AppTheme.body.copyWith(
+                        fontSize: 13,
+                        color: Colors.green,
+                      ),
                     ),
                   ],
                 ),
@@ -923,7 +1024,10 @@ class _OrderDetailScreenState extends State<_OrderDetailScreen> {
         children: [
           Text(
             item.name,
-            style: AppTheme.body.copyWith(fontSize: 13, fontWeight: FontWeight.w600),
+            style: AppTheme.body.copyWith(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -938,7 +1042,9 @@ class _OrderDetailScreenState extends State<_OrderDetailScreen> {
                 child: Padding(
                   padding: const EdgeInsets.only(right: 4),
                   child: Icon(
-                    star <= rating ? Icons.star_rounded : Icons.star_border_rounded,
+                    star <= rating
+                        ? Icons.star_rounded
+                        : Icons.star_border_rounded,
                     color: star <= rating ? Colors.amber : AppTheme.muted,
                     size: 30,
                   ),
@@ -964,11 +1070,18 @@ class _OrderDetailScreenState extends State<_OrderDetailScreen> {
           const Divider(height: 20, color: AppTheme.divider),
           Row(
             children: [
-              const Icon(Icons.delivery_dining, size: 16, color: AppTheme.primary),
+              const Icon(
+                Icons.delivery_dining,
+                size: 16,
+                color: AppTheme.primary,
+              ),
               const SizedBox(width: 6),
               Text(
                 label,
-                style: AppTheme.body.copyWith(fontSize: 13, fontWeight: FontWeight.w600),
+                style: AppTheme.body.copyWith(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ],
           ),
@@ -986,7 +1099,9 @@ class _OrderDetailScreenState extends State<_OrderDetailScreen> {
                     star <= _driverRating
                         ? Icons.star_rounded
                         : Icons.star_border_rounded,
-                    color: star <= _driverRating ? Colors.amber : AppTheme.muted,
+                    color: star <= _driverRating
+                        ? Colors.amber
+                        : AppTheme.muted,
                     size: 30,
                   ),
                 ),
@@ -998,16 +1113,39 @@ class _OrderDetailScreenState extends State<_OrderDetailScreen> {
     );
   }
 
+  // Maps every status to its position in the 4-step visual tracker
+  int _trackerIndex(OrderStatus s) {
+    switch (s) {
+      case OrderStatus.processing:
+        return 0;
+      case OrderStatus.confirmed:
+      case OrderStatus.assigned:
+        return 1;
+      case OrderStatus.pickedUp:
+        return 2;
+      case OrderStatus.inTransit:
+      case OrderStatus.shipped:
+        return 3;
+      case OrderStatus.delivered:
+        return 4;
+      default:
+        return 0;
+    }
+  }
+
   Widget _buildTracker() {
-    final steps = [
-      OrderStatus.processing,
-      OrderStatus.confirmed,
-      OrderStatus.shipped,
-      OrderStatus.delivered,
+    // 4 connector segments → 5 step nodes
+    const stepLabels  = ['Placed', 'Confirmed', 'Picked Up', 'In Transit', 'Delivered'];
+    const stepIcons   = [
+      Icons.receipt_long_rounded,
+      Icons.check_circle_outline_rounded,
+      Icons.storefront_outlined,
+      Icons.delivery_dining,
+      Icons.done_all_rounded,
     ];
     final currentIdx = order.status == OrderStatus.cancelled
         ? -1
-        : steps.indexOf(order.status);
+        : _trackerIndex(order.status);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1025,14 +1163,12 @@ class _OrderDetailScreenState extends State<_OrderDetailScreen> {
                   child: const Icon(Icons.cancel_outlined, color: Colors.red, size: 22),
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  'Order cancelled',
-                  style: AppTheme.subheading.copyWith(fontSize: 15, color: Colors.red),
-                ),
+                Text('Order cancelled',
+                    style: AppTheme.subheading.copyWith(fontSize: 15, color: Colors.red)),
               ],
             )
           : Row(
-              children: List.generate(steps.length * 2 - 1, (i) {
+              children: List.generate(stepLabels.length * 2 - 1, (i) {
                 if (i.isOdd) {
                   return Expanded(
                     child: Container(
@@ -1049,24 +1185,21 @@ class _OrderDetailScreenState extends State<_OrderDetailScreen> {
                 return Column(
                   children: [
                     Container(
-                      width: 32,
-                      height: 32,
+                      width: 30,
+                      height: 30,
                       decoration: BoxDecoration(
                         color: done ? AppTheme.primary : AppTheme.divider,
                         shape: BoxShape.circle,
                       ),
-                      child: Icon(
-                        _stepIcon(steps[idx]),
-                        size: 16,
-                        color: done ? Colors.white : AppTheme.muted,
-                      ),
+                      child: Icon(stepIcons[idx], size: 14,
+                          color: done ? Colors.white : AppTheme.muted),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      _stepLabel(steps[idx]),
+                      stepLabels[idx],
                       style: TextStyle(
                         fontFamily: 'Poppins',
-                        fontSize: 9,
+                        fontSize: 8,
                         color: done ? AppTheme.primary : AppTheme.muted,
                         fontWeight: done ? FontWeight.w600 : FontWeight.w400,
                       ),
@@ -1089,7 +1222,13 @@ class _OrderDetailScreenState extends State<_OrderDetailScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: AppTheme.body.copyWith(fontSize: 11, color: AppTheme.muted)),
+              Text(
+                label,
+                style: AppTheme.body.copyWith(
+                  fontSize: 11,
+                  color: AppTheme.muted,
+                ),
+              ),
               const SizedBox(height: 2),
               Text(value, style: AppTheme.body.copyWith(fontSize: 13)),
             ],

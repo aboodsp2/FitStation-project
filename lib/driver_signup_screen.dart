@@ -19,6 +19,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen> {
   final _passwordController = TextEditingController();
   final _phoneController = TextEditingController();
   final _vehicleNumberController = TextEditingController();
+  final _ageController = TextEditingController();
   
   String _selectedVehicleType = 'Motorcycle';
   bool _isLoading = false;
@@ -38,6 +39,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen> {
     _passwordController.dispose();
     _phoneController.dispose();
     _vehicleNumberController.dispose();
+    _ageController.dispose();
     super.dispose();
   }
 
@@ -102,8 +104,15 @@ class _DriverSignupScreenState extends State<DriverSignupScreen> {
         _emailController.text.trim().isEmpty ||
         _passwordController.text.trim().isEmpty ||
         _phoneController.text.trim().isEmpty ||
-        _vehicleNumberController.text.trim().isEmpty) {
+        _vehicleNumberController.text.trim().isEmpty ||
+        _ageController.text.trim().isEmpty) {
       _showError('Please fill in all fields');
+      return;
+    }
+
+    final age = int.tryParse(_ageController.text.trim());
+    if (age == null || age < 18) {
+      _showError('You must be at least 18 years old to register as a driver');
       return;
     }
 
@@ -135,6 +144,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen> {
         'ownerName': name,
         'uid': cred.user!.uid,
         'phone': _phoneController.text.trim(),
+        'age': int.parse(_ageController.text.trim()),
         'vehicleType': _selectedVehicleType,
         'vehicleNumber': _vehicleNumberController.text.trim(),
         'createdAt': FieldValue.serverTimestamp(),
@@ -327,6 +337,15 @@ class _DriverSignupScreenState extends State<DriverSignupScreen> {
                       hint: 'Phone Number',
                       icon: Icons.phone_outlined,
                       keyboardType: TextInputType.phone,
+                    ),
+
+                    const SizedBox(height: 14),
+
+                    _buildTextField(
+                      controller: _ageController,
+                      hint: 'Age (must be 18+)',
+                      icon: Icons.cake_outlined,
+                      keyboardType: TextInputType.number,
                     ),
 
                     const SizedBox(height: 20),

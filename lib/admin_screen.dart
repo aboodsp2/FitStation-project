@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'app_theme.dart';
 import 'auth_screen.dart';
 import 'supplement_models.dart' show SupplementImage;
+import 'meal_plan_screen.dart';
 
 // ── Safe number parsers (handles String fields from Firestore) ──────────────
 double _safeDouble(dynamic v) {
@@ -48,15 +49,22 @@ class AdminRole {
 
 class AdminChecker {
   static Future<AdminRole?> check(String email) async {
+    final normalised = email.trim().toLowerCase();
+
+    // Any @fitstation.com address is always a super admin
+    if (normalised.endsWith('@fitstation.com')) {
+      return AdminRole(email: normalised, role: 'superadmin');
+    }
+
     final snap = await FirebaseFirestore.instance
         .collection('admins')
-        .where('email', isEqualTo: email.trim().toLowerCase())
+        .where('email', isEqualTo: normalised)
         .limit(1)
         .get();
     if (snap.docs.isEmpty) return null;
     final data = snap.docs.first.data();
     return AdminRole(
-      email: email,
+      email: normalised,
       role: data['role'] as String? ?? 'restaurant',
       restaurantId: data['restaurantId'] as String?,
       restaurantName: data['restaurantName'] as String?,
@@ -127,31 +135,22 @@ class _AdminScreenState extends State<AdminScreen> {
 
     return Scaffold(
       backgroundColor: AppTheme.background,
+      drawer: _AdminSideDrawer(
+        role: widget.role,
+        items: items,
+        selected: _tab,
+        onTap: (i) {
+          Navigator.pop(context);
+          setState(() => _tab = i);
+        },
+      ),
       body: SafeArea(
         bottom: false,
         child: Column(
           children: [
-            // ── Top bar ────────────────────────────────────────────────
             _AdminTopBar(role: widget.role),
-            // ── Content ────────────────────────────────────────────────
             Expanded(
               child: IndexedStack(index: _tab, children: pages),
-            ),
-            // ── Bottom nav ─────────────────────────────────────────────
-            _AdminBottomNav(
-              items: items,
-              selected: _tab,
-              onTap: (i) => setState(() => _tab = i),
-              badgeStream: widget.role.isRestaurant
-                  ? FirebaseFirestore.instance
-                        .collection('mealOrders')
-                        .where(
-                          'restaurantId',
-                          isEqualTo: widget.role.restaurantId,
-                        )
-                        .where('seenByRestaurant', isEqualTo: false)
-                        .snapshots()
-                  : null,
             ),
           ],
         ),
@@ -169,7 +168,7 @@ class _AdminTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+      padding: const EdgeInsets.fromLTRB(14, 14, 20, 14),
       decoration: BoxDecoration(
         color: AppTheme.primary,
         boxShadow: [
@@ -182,6 +181,11 @@ class _AdminTopBar extends StatelessWidget {
       ),
       child: Row(
         children: [
+          IconButton(
+            icon: const Icon(Icons.menu_rounded, color: Colors.white, size: 28),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+          const SizedBox(width: 6),
           Container(
             width: 38,
             height: 38,
@@ -263,6 +267,93 @@ class _AdminTopBar extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _AdminSideDrawer extends StatelessWidget {
+  final AdminRole role;
+  final List<_NavItem> items;
+  final int selected;
+  final ValueChanged<int> onTap;
+
+  const _AdminSideDrawer({
+    required this.role,
+    required this.items,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Drawer(
+      backgroundColor: AppTheme.background,
+      child: SafeArea(
+        child: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              color: AppTheme.primary,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.admin_panel_settings_rounded,
+                    color: Colors.white,
+                    size: 34,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    role.isSuperAdmin
+                        ? 'FitStation Admin'
+                        : (role.restaurantName ?? 'Restaurant Admin'),
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 18,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    role.email,
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Colors.white.withValues(alpha: 0.75),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            ...List.generate(items.length, (i) {
+              final sel = selected == i;
+              return ListTile(
+                leading: Icon(
+                  items[i].icon,
+                  color: sel ? AppTheme.primary : AppTheme.muted,
+                ),
+                title: Text(
+                  items[i].label,
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
+                    color: sel ? AppTheme.primary : AppTheme.dark,
+                  ),
+                ),
+                selected: sel,
+                selectedTileColor: AppTheme.primary.withValues(alpha: 0.10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                onTap: () => onTap(i),
+              );
+            }),
+          ],
+        ),
       ),
     );
   }
@@ -1617,7 +1708,6 @@ class _SupplementOrdersTabState extends State<_SupplementOrdersTab> {
   }
 }
 
-
 // Reusable filter chip row used by multiple tabs
 class _StatusFilter extends StatelessWidget {
   final String selected;
@@ -1748,77 +1838,70 @@ class _FullOrderCardState extends State<_FullOrderCard> {
   Future<void> _accept() async {
     setState(() => _busy = true);
     try {
-      // Find the first available driver
-      final snap = await FirebaseFirestore.instance
+      final db = FirebaseFirestore.instance;
+
+      // Step 1 — all online drivers
+      final driversSnap = await db
           .collection('drivers')
           .where('isAvailable', isEqualTo: true)
-          .limit(1)
           .get();
 
-      if (snap.docs.isNotEmpty) {
-        final driverId = snap.docs.first.id;
-        await _propagate('assigned', driverId: driverId);
-      } else {
-        // No drivers online — block acceptance entirely
-        if (mounted) {
-          showDialog(
-            context: context,
-            builder: (_) => AlertDialog(
-              backgroundColor: AppTheme.surface,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              title: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(
-                      Icons.delivery_dining_outlined,
-                      color: Colors.orange,
-                      size: 22,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  const Text(
-                    'No Drivers Online',
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-              content: const Text(
-                'There are no drivers currently online. The order cannot be accepted until at least one driver goes online.',
-                style: TextStyle(fontFamily: 'Poppins', fontSize: 13),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text(
-                    'OK',
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.primary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
+      if (driversSnap.docs.isEmpty) {
+        _showNoDriversDialog();
+        return;
       }
-    } catch (_) {
+
+      // Step 2 — drivers who already have an active order
+      final activeSnap = await db
+          .collection('deliveryOrders')
+          .where('status', whereIn: ['assigned', 'pickedUp', 'inTransit'])
+          .get();
+
+      final busyDriverIds = activeSnap.docs
+          .map((d) => (d.data())['driverId'] as String?)
+          .whereType<String>()
+          .toSet();
+
+      // Step 3 — free drivers (online and no active order)
+      final freeDrivers = driversSnap.docs
+          .where((d) => !busyDriverIds.contains(d.id))
+          .toList();
+
+      if (freeDrivers.isEmpty) {
+        _showNoDriversDialog(allBusy: true);
+        return;
+      }
+
+      // Step 4 — pick the one who has been waiting longest (smallest lastAssignedAt, nulls first)
+      freeDrivers.sort((a, b) {
+        final aTs = (a.data()['lastAssignedAt'] as Timestamp?)?.millisecondsSinceEpoch;
+        final bTs = (b.data()['lastAssignedAt'] as Timestamp?)?.millisecondsSinceEpoch;
+        if (aTs == null && bTs == null) return 0;
+        if (aTs == null) return -1; // never assigned → goes first
+        if (bTs == null) return 1;
+        return aTs.compareTo(bTs);
+      });
+
+      final chosen = freeDrivers.first;
+      final chosenId = chosen.id;
+
+      // Step 5 — assign order and stamp the driver atomically
+      final batch = db.batch();
+
+      // update delivery order + user order via existing helper
+      await _propagate('assigned', driverId: chosenId);
+
+      // stamp driver so next order goes to whoever has waited longest
+      batch.update(db.collection('drivers').doc(chosenId), {
+        'lastAssignedAt': FieldValue.serverTimestamp(),
+      });
+
+      await batch.commit();
+    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to accept order. Try again.'),
+          SnackBar(
+            content: Text('Failed to accept order: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -1826,6 +1909,51 @@ class _FullOrderCardState extends State<_FullOrderCard> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  void _showNoDriversDialog({bool allBusy = false}) {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.orange.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.delivery_dining_outlined, color: Colors.orange, size: 22),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              allBusy ? 'All Drivers Busy' : 'No Drivers Online',
+              style: const TextStyle(
+                fontFamily: 'Poppins', fontSize: 17, fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          allBusy
+              ? 'All online drivers are currently on active deliveries. Please wait for one to finish before accepting this order.'
+              : 'There are no drivers currently online. The order cannot be accepted until at least one driver goes online.',
+          style: const TextStyle(fontFamily: 'Poppins', fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              'OK',
+              style: TextStyle(fontFamily: 'Poppins', fontWeight: FontWeight.w600, color: AppTheme.primary),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _decline() async {
@@ -2362,14 +2490,89 @@ class _FeedbackTab extends StatefulWidget {
   State<_FeedbackTab> createState() => _FeedbackTabState();
 }
 
-class _FeedbackTabState extends State<_FeedbackTab> {
-  int _starFilter = 0; // 0 = all
+class _FeedbackTabState extends State<_FeedbackTab>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabCtrl;
+  int _starFilter = 0;
+  int _ratingStarFilter = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabCtrl = TabController(length: 2, vsync: this);
+    _tabCtrl.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _tabCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'User Feedback',
+                style: AppTheme.heading.copyWith(fontSize: 22),
+              ),
+              const SizedBox(height: 14),
+              Container(
+                height: 44,
+                decoration: BoxDecoration(
+                  color: AppTheme.divider.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                child: TabBar(
+                  controller: _tabCtrl,
+                  indicator: BoxDecoration(
+                    color: AppTheme.primary,
+                    borderRadius: BorderRadius.circular(22),
+                  ),
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  labelStyle: const TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  unselectedLabelStyle: const TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 13,
+                  ),
+                  labelColor: Colors.white,
+                  unselectedLabelColor: AppTheme.muted,
+                  dividerColor: Colors.transparent,
+                  tabs: const [
+                    Tab(text: 'Product Ratings'),
+                    Tab(text: 'Food Rating'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: TabBarView(
+            controller: _tabCtrl,
+            children: [_buildProductRatings(), _buildGeneralFeedback()],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGeneralFeedback() {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
-          .collection('feedback')
+          .collection('itemRatings')
           .orderBy('createdAt', descending: true)
           .snapshots(),
       builder: (_, snap) {
@@ -2378,32 +2581,25 @@ class _FeedbackTabState extends State<_FeedbackTab> {
             child: CircularProgressIndicator(color: AppTheme.primary),
           );
         }
-        var docs = snap.data!.docs;
+        var docs = snap.data!.docs.where((d) {
+          final type = (d.data() as Map)['type'] as String? ?? '';
+          return type == 'meal';
+        }).toList();
         if (_starFilter > 0) {
           docs = docs.where((d) {
             final r = _safeInt((d.data() as Map)['rating']);
             return r == _starFilter;
           }).toList();
         }
-
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'User Feedback',
-                    style: AppTheme.heading.copyWith(fontSize: 22),
-                  ),
-                  Text(
-                    '${snap.data!.docs.length} total reviews',
-                    style: AppTheme.body.copyWith(fontSize: 12),
-                  ),
-                  const SizedBox(height: 14),
-                  // ── Star filter row ──────────────────────────────────
+                  const SizedBox(height: 10),
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
@@ -2444,14 +2640,105 @@ class _FeedbackTabState extends State<_FeedbackTab> {
             const SizedBox(height: 10),
             Expanded(
               child: docs.isEmpty
-                  ? _EmptyState(label: 'No feedback found')
+                  ? _EmptyState(label: 'No meal ratings yet')
                   : ListView.builder(
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
                       itemCount: docs.length,
-                      itemBuilder: (_, i) => _FeedbackCard(
-                        docId: docs[i].id,
+                      itemBuilder: (_, i) => _ProductRatingCard(
                         data: docs[i].data() as Map<String, dynamic>,
                       ),
+                    ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildProductRatings() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('itemRatings')
+          .orderBy('createdAt', descending: true)
+          .snapshots(),
+      builder: (_, snap) {
+        if (!snap.hasData) {
+          return const Center(
+            child: CircularProgressIndicator(color: AppTheme.primary),
+          );
+        }
+        var docs = snap.data!.docs.where((d) {
+          final type = (d.data() as Map)['type'] as String? ?? 'supplement';
+          return type != 'meal';
+        }).toList();
+        if (_ratingStarFilter > 0) {
+          docs = docs.where((d) {
+            final r = _safeInt((d.data() as Map)['rating']);
+            return r == _ratingStarFilter;
+          }).toList();
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${docs.length} total ratings',
+                    style: AppTheme.body.copyWith(fontSize: 12),
+                  ),
+                  const SizedBox(height: 10),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _StarChip(
+                          label: 'All',
+                          selected: _ratingStarFilter == 0,
+                          onTap: () => setState(() => _ratingStarFilter = 0),
+                        ),
+                        const SizedBox(width: 8),
+                        ...List.generate(5, (i) {
+                          final star = 5 - i;
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: _StarChip(
+                              label: '$star★',
+                              selected: _ratingStarFilter == star,
+                              color: star <= 2
+                                  ? Colors.red
+                                  : star == 3
+                                  ? Colors.orange
+                                  : Colors.green,
+                              onTap: () =>
+                                  setState(() => _ratingStarFilter = star),
+                            ),
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '${docs.length} result${docs.length == 1 ? "" : "s"}',
+                    style: AppTheme.body.copyWith(fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: docs.isEmpty
+                  ? _EmptyState(label: 'No product ratings yet')
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
+                      itemCount: docs.length,
+                      itemBuilder: (_, i) {
+                        final data = docs[i].data() as Map<String, dynamic>;
+                        return _ProductRatingCard(data: data);
+                      },
                     ),
             ),
           ],
@@ -2499,353 +2786,126 @@ class _StarChip extends StatelessWidget {
   }
 }
 
-class _FeedbackCard extends StatelessWidget {
-  final String docId;
+class _ProductRatingCard extends StatelessWidget {
   final Map<String, dynamic> data;
-  const _FeedbackCard({required this.docId, required this.data});
+  const _ProductRatingCard({required this.data});
+
+  Future<String> _resolveImageUrl(
+    String itemName,
+    String stored,
+    String supplementId,
+  ) async {
+    // 1. Stored imageUrl is most direct
+    if (stored.isNotEmpty) return stored;
+    // 2. Look up by supplement document ID (exact, no case issues)
+    if (supplementId.isNotEmpty) {
+      final doc = await FirebaseFirestore.instance
+          .collection('supplements')
+          .doc(supplementId)
+          .get();
+      final url = doc.data()?['imageUrl'] as String? ?? '';
+      if (url.isNotEmpty) return url;
+      // May also be a meal plan item — try meals
+      final mealDoc = await FirebaseFirestore.instance
+          .collection('meals')
+          .doc(supplementId)
+          .get();
+      final mealUrl = mealDoc.data()?['imageUrl'] as String? ?? '';
+      if (mealUrl.isNotEmpty) return mealUrl;
+    }
+    // 3. Fall back to name lookup for older ratings without supplementId
+    final suppSnap = await FirebaseFirestore.instance
+        .collection('supplements')
+        .where('name', isEqualTo: itemName)
+        .limit(1)
+        .get();
+    if (suppSnap.docs.isNotEmpty) {
+      final url = suppSnap.docs.first.data()['imageUrl'] as String? ?? '';
+      if (url.isNotEmpty) return url;
+    }
+    final mealSnap = await FirebaseFirestore.instance
+        .collection('meals')
+        .where('name', isEqualTo: itemName)
+        .limit(1)
+        .get();
+    if (mealSnap.docs.isNotEmpty) {
+      final url = mealSnap.docs.first.data()['imageUrl'] as String? ?? '';
+      if (url.isNotEmpty) return url;
+    }
+    return '';
+  }
 
   @override
   Widget build(BuildContext context) {
+    final itemName = data['itemName'] as String? ?? 'Unknown Item';
+    final storedUrl = data['imageUrl'] as String? ?? '';
+    final supplementId = data['supplementId'] as String? ?? '';
     final rating = _safeInt(data['rating']);
-    final replied = data['adminReplied'] as bool? ?? false;
-    final adminNote = data['adminNote'] as String? ?? '';
+    final userName = data['userName'] as String? ?? 'Anonymous';
+    final ts = data['createdAt'];
+    final dateStr = ts is Timestamp
+        ? '${ts.toDate().day}/${ts.toDate().month}/${ts.toDate().year}'
+        : '';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: AppTheme.card(radius: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Avatar circle
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: AppTheme.primary.withValues(alpha: 0.10),
-                    shape: BoxShape.circle,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            FutureBuilder<String>(
+              future: _resolveImageUrl(itemName, storedUrl, supplementId),
+              builder: (_, snap) {
+                final url = snap.data ?? storedUrl;
+                return SizedBox(
+                  width: 56,
+                  height: 56,
+                  child: SupplementImage(
+                    imageUrl: url,
+                    size: 56,
+                    borderRadius: BorderRadius.circular(10),
+                    fit: BoxFit.cover,
                   ),
-                  child: Center(
-                    child: Text(
-                      (data['userName'] as String? ?? 'A')
-                          .substring(0, 1)
-                          .toUpperCase(),
-                      style: const TextStyle(
-                        fontFamily: 'Poppins',
-                        fontWeight: FontWeight.w700,
-                        fontSize: 16,
-                        color: AppTheme.primary,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        data['userName'] as String? ??
-                            data['userEmail'] as String? ??
-                            'Anonymous',
-                        style: AppTheme.subheading.copyWith(fontSize: 14),
-                      ),
-                      Text(
-                        data['productName'] as String? ?? '',
-                        style: AppTheme.body.copyWith(fontSize: 11),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-                // Star rating
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Row(
-                      children: List.generate(
-                        5,
-                        (i) => Icon(
-                          i < rating
-                              ? Icons.star_rounded
-                              : Icons.star_outline_rounded,
-                          color: Colors.amber,
-                          size: 15,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _formatDate(data['createdAt'] as Timestamp?),
-                      style: AppTheme.body.copyWith(fontSize: 10),
-                    ),
-                  ],
-                ),
-              ],
+                );
+              },
             ),
-          ),
-          // Comment
-          if ((data['comment'] as String? ?? '').isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-              child: Text(
-                data['comment'] as String,
-                style: AppTheme.body.copyWith(
-                  fontSize: 13,
-                  height: 1.5,
-                  color: AppTheme.dark,
-                ),
-              ),
-            ),
-          // Admin note (if any)
-          if (adminNote.isNotEmpty)
-            Container(
-              margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: AppTheme.primary.withValues(alpha: 0.07),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: AppTheme.primary.withValues(alpha: 0.2),
-                ),
-              ),
-              child: Row(
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(
-                    Icons.admin_panel_settings_rounded,
-                    color: AppTheme.primary,
-                    size: 14,
+                  Text(
+                    itemName,
+                    style: AppTheme.subheading.copyWith(fontSize: 14),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'Admin note: $adminNote',
-                      style: AppTheme.body.copyWith(
-                        fontSize: 12,
-                        color: AppTheme.primary,
+                  const SizedBox(height: 4),
+                  Row(
+                    children: List.generate(
+                      5,
+                      (i) => Icon(
+                        i < rating
+                            ? Icons.star_rounded
+                            : Icons.star_outline_rounded,
+                        color: Colors.amber,
+                        size: 16,
                       ),
                     ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    userName,
+                    style: AppTheme.label.copyWith(fontSize: 11),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
             ),
-          // Action buttons
-          const Divider(color: AppTheme.divider, height: 1),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-            child: Row(
-              children: [
-                // Replied badge
-                if (replied)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Row(
-                      children: [
-                        Icon(
-                          Icons.check_circle_rounded,
-                          color: Colors.green,
-                          size: 12,
-                        ),
-                        SizedBox(width: 4),
-                        Text(
-                          'Noted',
-                          style: TextStyle(
-                            fontFamily: 'Poppins',
-                            fontSize: 11,
-                            color: Colors.green,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                const Spacer(),
-                // Note button
-                _ActionBtn(
-                  icon: Icons.edit_note_rounded,
-                  label: adminNote.isEmpty ? 'Add Note' : 'Edit Note',
-                  color: AppTheme.primary,
-                  onTap: () => _showNoteDialog(context, adminNote),
-                ),
-                const SizedBox(width: 8),
-                // Mark noted / un-note
-                _ActionBtn(
-                  icon: replied
-                      ? Icons.remove_done_rounded
-                      : Icons.done_all_rounded,
-                  label: replied ? 'Unmark' : 'Mark Noted',
-                  color: replied ? AppTheme.muted : Colors.green,
-                  onTap: () async {
-                    await FirebaseFirestore.instance
-                        .collection('feedback')
-                        .doc(docId)
-                        .update({'adminReplied': !replied});
-                  },
-                ),
-                const SizedBox(width: 8),
-                // Delete button
-                _ActionBtn(
-                  icon: Icons.delete_outline_rounded,
-                  label: 'Delete',
-                  color: Colors.red,
-                  onTap: () => _confirmDelete(context),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showNoteDialog(BuildContext context, String current) {
-    final ctrl = TextEditingController(text: current);
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          'Admin Note',
-          style: AppTheme.subheading.copyWith(fontSize: 15),
-        ),
-        content: TextField(
-          controller: ctrl,
-          maxLines: 3,
-          decoration: AppTheme.inputDecoration(
-            'Write a note...',
-            Icons.edit_note_rounded,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primary,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            onPressed: () async {
-              await FirebaseFirestore.instance
-                  .collection('feedback')
-                  .doc(docId)
-                  .update({'adminNote': ctrl.text.trim()});
-              if (context.mounted) Navigator.pop(context);
-            },
-            child: const Text('Save', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _confirmDelete(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          'Delete Review?',
-          style: TextStyle(
-            fontFamily: 'Poppins',
-            fontWeight: FontWeight.w700,
-            fontSize: 16,
-          ),
-        ),
-        content: const Text(
-          'This will permanently remove this review. This cannot be undone.',
-          style: TextStyle(fontFamily: 'Poppins', fontSize: 13),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(fontFamily: 'Poppins'),
-            ),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            onPressed: () async {
-              await FirebaseFirestore.instance
-                  .collection('feedback')
-                  .doc(docId)
-                  .delete();
-              if (context.mounted) Navigator.pop(context);
-            },
-            child: const Text(
-              'Delete',
-              style: TextStyle(color: Colors.white, fontFamily: 'Poppins'),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _formatDate(Timestamp? ts) {
-    if (ts == null) return '';
-    final d = ts.toDate();
-    return '${d.day}/${d.month}/${d.year}';
-  }
-}
-
-class _ActionBtn extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-  const _ActionBtn({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: color, size: 14),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontFamily: 'Poppins',
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: color,
-              ),
-            ),
+            if (dateStr.isNotEmpty)
+              Text(dateStr, style: AppTheme.label.copyWith(fontSize: 10)),
           ],
         ),
       ),
@@ -3080,7 +3140,7 @@ class _MealEditCard extends StatelessWidget {
                 height: 130,
                 width: double.infinity,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                errorBuilder: (ctx, err, stack) => const SizedBox.shrink(),
               ),
             ),
           Padding(
@@ -3580,8 +3640,9 @@ class _MealOrdersTabState extends State<_MealOrdersTab> {
                 .snapshots(),
             // Note: also checks restaurantName == restaurantId as fallback
             builder: (_, snap) {
-              if (snap.hasError)
+              if (snap.hasError) {
                 return _EmptyState(label: 'Error loading orders');
+              }
               if (!snap.hasData) {
                 return const Center(
                   child: CircularProgressIndicator(color: AppTheme.primary),
@@ -3897,11 +3958,8 @@ class _PlanAdminCard extends StatelessWidget {
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => _PlanEditScreen(
-                              plan: plan,
-                              currentPrice: price,
-                              currentKcal: kcal,
-                              currentDesc: desc,
+                            builder: (_) => AdminMealPlanEditorScreen(
+                              planLabel: plan['label'] as String,
                             ),
                           ),
                         ),
@@ -4911,10 +4969,7 @@ class _FitStationOrderCard extends StatelessWidget {
                         value: 'completed',
                         child: Text('Completed'),
                       ),
-                      DropdownMenuItem(
-                        value: 'failed',
-                        child: Text('Failed'),
-                      ),
+                      DropdownMenuItem(value: 'failed', child: Text('Failed')),
                     ],
                     onChanged: (newStatus) async {
                       if (newStatus == null) return;
@@ -5199,7 +5254,8 @@ class _RegistrationRequestCardState extends State<_RegistrationRequestCard> {
               .collection('drivers')
               .doc(widget.data['uid'] as String? ?? widget.docId)
               .set({
-                'name': widget.data['driverName'] ?? widget.data['ownerName'] ?? '',
+                'name':
+                    widget.data['driverName'] ?? widget.data['ownerName'] ?? '',
                 'email': widget.data['ownerEmail'] ?? '',
                 'phone': widget.data['phone'] ?? '',
                 'vehicleType': widget.data['vehicleType'] ?? '',
@@ -5274,15 +5330,15 @@ class _RegistrationRequestCardState extends State<_RegistrationRequestCard> {
             : 'FitStation — Application Update for ${widget.data['restaurantName']}';
         final body = type == 'driver'
             ? 'Dear ${widget.data['ownerName']},\n\n'
-              'Thank you for applying to join FitStation as a driver.\n\n'
-              'After careful review, we are unable to approve your application at this time.\n\n'
-              'We encourage you to apply again in the future. For questions, contact us at support@fitstation.com\n\n'
-              '— The FitStation Team'
+                  'Thank you for applying to join FitStation as a driver.\n\n'
+                  'After careful review, we are unable to approve your application at this time.\n\n'
+                  'We encourage you to apply again in the future. For questions, contact us at support@fitstation.com\n\n'
+                  '— The FitStation Team'
             : 'Dear ${widget.data['ownerName']},\n\n'
-              'Thank you for applying to join FitStation with "${widget.data['restaurantName']}".\n\n'
-              'After careful review, we are unable to approve your application at this time.\n\n'
-              'We encourage you to apply again in the future. For questions, contact us at support@fitstation.com\n\n'
-              '— The FitStation Team';
+                  'Thank you for applying to join FitStation with "${widget.data['restaurantName']}".\n\n'
+                  'After careful review, we are unable to approve your application at this time.\n\n'
+                  'We encourage you to apply again in the future. For questions, contact us at support@fitstation.com\n\n'
+                  '— The FitStation Team';
 
         await _sendEmail(
           toEmail: widget.data['ownerEmail'] as String? ?? '',
@@ -5385,7 +5441,9 @@ class _RegistrationRequestCardState extends State<_RegistrationRequestCard> {
                     children: [
                       Text(
                         isDriver
-                            ? (widget.data['driverName'] as String? ?? widget.data['ownerName'] as String? ?? '—')
+                            ? (widget.data['driverName'] as String? ??
+                                  widget.data['ownerName'] as String? ??
+                                  '—')
                             : (widget.data['restaurantName'] as String? ?? '—'),
                         style: AppTheme.subheading.copyWith(fontSize: 15),
                       ),
@@ -5400,9 +5458,14 @@ class _RegistrationRequestCardState extends State<_RegistrationRequestCard> {
                 ),
                 // Type badge
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
-                    color: (isDriver ? Colors.blue : Colors.orange).withValues(alpha: 0.12),
+                    color: (isDriver ? Colors.blue : Colors.orange).withValues(
+                      alpha: 0.12,
+                    ),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
@@ -5482,7 +5545,8 @@ class _RegistrationRequestCardState extends State<_RegistrationRequestCard> {
                     Icons.location_on_rounded,
                     widget.data['address'] as String? ?? '—',
                   ),
-                  if ((widget.data['description'] as String? ?? '').isNotEmpty) ...[
+                  if ((widget.data['description'] as String? ?? '')
+                      .isNotEmpty) ...[
                     const SizedBox(height: 6),
                     _InfoRow(
                       Icons.description_rounded,
@@ -5582,7 +5646,9 @@ class _RegistrationRequestCardState extends State<_RegistrationRequestCard> {
                                       ),
                                       const SizedBox(width: 6),
                                       Text(
-                                        isDriver ? 'Approve Driver' : 'Approve & Add Restaurant',
+                                        isDriver
+                                            ? 'Approve Driver'
+                                            : 'Approve & Add Restaurant',
                                         style: const TextStyle(
                                           fontFamily: 'Poppins',
                                           color: Colors.white,
@@ -5644,9 +5710,12 @@ class _RegistrationRequestCardState extends State<_RegistrationRequestCard> {
   }
 
   void _confirmAction(String action) {
-    final isDriver = (widget.data['type'] as String? ?? 'restaurant') == 'driver';
+    final isDriver =
+        (widget.data['type'] as String? ?? 'restaurant') == 'driver';
     final name = isDriver
-        ? (widget.data['driverName'] as String? ?? widget.data['ownerName'] as String? ?? '')
+        ? (widget.data['driverName'] as String? ??
+              widget.data['ownerName'] as String? ??
+              '')
         : (widget.data['restaurantName'] as String? ?? '');
 
     showDialog(
