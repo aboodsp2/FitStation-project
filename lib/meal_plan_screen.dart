@@ -695,7 +695,7 @@ class _MealDetailSheetState extends State<_MealDetailSheet> {
 
                   // ── Price ─────────────────────────────────────────────────
                   Text(
-                    '\$${meal.price.toStringAsFixed(2)} / meal',
+                    '${meal.price.toStringAsFixed(2)} JOD / meal',
                     style: const TextStyle(
                       fontFamily: 'Poppins',
                       fontSize: 24,
@@ -1558,7 +1558,7 @@ class _MealRowCard extends StatelessWidget {
                           text: TextSpan(
                             children: [
                               TextSpan(
-                                text: '\$${meal.price.toStringAsFixed(2)}',
+                                text: '${meal.price.toStringAsFixed(2)} JOD',
                                 style: AppTheme.subheading.copyWith(
                                   fontSize: 16,
                                   color: AppTheme.dark,
@@ -3025,7 +3025,7 @@ class _AddToCartBtn extends StatelessWidget {
             size: 20,
           ),
           label: Text(
-            "ADD TO CART  —  \$${price.toStringAsFixed(0)}",
+            "ADD TO CART  —  ${price.toStringAsFixed(0)} JOD",
             style: const TextStyle(
               color: Colors.white,
               fontFamily: 'Poppins',

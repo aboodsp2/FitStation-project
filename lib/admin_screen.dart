@@ -234,7 +234,7 @@ class _AdminTopBar extends StatelessWidget {
               if (context.mounted) {
                 Navigator.pushAndRemoveUntil(
                   context,
-                  MaterialPageRoute(builder: (_) => const AuthFlowHandler()),
+                  MaterialPageRoute(builder: (_) => const AuthFlowHandler(startAtLogin: true)),
                   (r) => false,
                 );
               }
@@ -705,7 +705,7 @@ class _OrderRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '\$${_safeDouble(data['total']).toStringAsFixed(2)}',
+                '${_safeDouble(data['total']).toStringAsFixed(2)} JOD',
                 style: AppTheme.subheading.copyWith(
                   fontSize: 14,
                   color: AppTheme.primary,
@@ -833,7 +833,7 @@ class _ConsultRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '\$${_safeDouble(data['price']).toStringAsFixed(0)}',
+                '${_safeDouble(data['price']).toStringAsFixed(0)} JOD',
                 style: AppTheme.subheading.copyWith(
                   fontSize: 13,
                   color: AppTheme.primary,
@@ -1030,8 +1030,8 @@ class _SupplementsTabState extends State<_SupplementsTab> {
                             decimal: true,
                           ),
                           decoration: AppTheme.inputDecoration(
-                            'Price (\$) *',
-                            Icons.attach_money_rounded,
+                            'Price (JOD) *',
+                            Icons.payments_outlined,
                           ),
                         ),
                       ),
@@ -1479,7 +1479,7 @@ class _SupplementCard extends StatelessWidget {
                 Row(
                   children: [
                     Text(
-                      '\$${_safeDouble(data['price']).toStringAsFixed(2)}',
+                      '${_safeDouble(data['price']).toStringAsFixed(2)} JOD',
                       style: TextStyle(
                         fontFamily: 'Poppins',
                         fontSize: 13,
@@ -2338,7 +2338,7 @@ class _ConsultationCard extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '\$${_safeDouble(data['price']).toStringAsFixed(0)}',
+                  '${_safeDouble(data['price']).toStringAsFixed(0)} JOD',
                   style: AppTheme.subheading.copyWith(
                     fontSize: 15,
                     color: AppTheme.primary,
@@ -3015,10 +3015,12 @@ class _RestaurantMealsTabState extends State<_RestaurantMealsTab> {
     final priceCtrl = TextEditingController();
     final kcalCtrl = TextEditingController();
     final proteinCtrl = TextEditingController();
+    final imageUrlCtrl = TextEditingController();
 
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
           'Add New Meal',
@@ -3049,8 +3051,8 @@ class _RestaurantMealsTabState extends State<_RestaurantMealsTab> {
                 controller: priceCtrl,
                 keyboardType: TextInputType.number,
                 decoration: AppTheme.inputDecoration(
-                  'Price (\$)',
-                  Icons.attach_money_rounded,
+                  'Price (JOD)',
+                  Icons.payments_outlined,
                 ),
               ),
               const SizedBox(height: 10),
@@ -3069,6 +3071,40 @@ class _RestaurantMealsTabState extends State<_RestaurantMealsTab> {
                   Icons.fitness_center_rounded,
                 ),
               ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: imageUrlCtrl,
+                keyboardType: TextInputType.url,
+                onChanged: (_) => setDlgState(() {}),
+                decoration: AppTheme.inputDecoration(
+                  'Image URL (paste a photo link)',
+                  Icons.image_outlined,
+                ),
+              ),
+              // Live preview
+              if (imageUrlCtrl.text.trim().isNotEmpty) ...[
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.network(
+                    imageUrlCtrl.text.trim(),
+                    height: 120,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      height: 120,
+                      decoration: BoxDecoration(
+                        color: AppTheme.divider,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Center(
+                        child: Text('Invalid image URL',
+                            style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -3098,6 +3134,7 @@ class _RestaurantMealsTabState extends State<_RestaurantMealsTab> {
                     'price': price,
                     'kcal': kcalCtrl.text.trim(),
                     'protein': proteinCtrl.text.trim(),
+                    'imageUrl': imageUrlCtrl.text.trim(),
                     'available': true,
                     'createdAt': FieldValue.serverTimestamp(),
                   });
@@ -3109,6 +3146,7 @@ class _RestaurantMealsTabState extends State<_RestaurantMealsTab> {
             ),
           ),
         ],
+      ),
       ),
     );
   }
@@ -3129,18 +3167,27 @@ class _MealEditCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Meal image if available
-          if ((data['mealAsset'] as String? ?? '').isNotEmpty)
+          // Meal image — prefer network imageUrl, fall back to local mealAsset
+          if ((data['imageUrl'] as String? ?? '').isNotEmpty)
             ClipRRect(
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(18),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+              child: Image.network(
+                data['imageUrl'] as String,
+                height: 130,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, e) => const SizedBox.shrink(),
               ),
+            )
+          else if ((data['mealAsset'] as String? ?? '').isNotEmpty)
+            ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
               child: Image.asset(
                 data['mealAsset'] as String,
                 height: 130,
                 width: double.infinity,
                 fit: BoxFit.cover,
-                errorBuilder: (ctx, err, stack) => const SizedBox.shrink(),
+                errorBuilder: (_, __, e) => const SizedBox.shrink(),
               ),
             ),
           Padding(
@@ -3196,8 +3243,8 @@ class _MealEditCard extends StatelessWidget {
                 Row(
                   children: [
                     _MacroChip(
-                      Icons.attach_money_rounded,
-                      '\$${_safeDouble(data['price']).toStringAsFixed(2)}',
+                      Icons.payments_outlined,
+                      '${_safeDouble(data['price']).toStringAsFixed(2)} JOD',
                       AppTheme.primary,
                     ),
                     const SizedBox(width: 8),
@@ -3418,8 +3465,8 @@ class _MealEditCard extends StatelessWidget {
                   controller: priceCtrl,
                   keyboardType: TextInputType.number,
                   decoration: AppTheme.inputDecoration(
-                    'Price (\$)',
-                    Icons.attach_money_rounded,
+                    'Price (JOD)',
+                    Icons.payments_outlined,
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -3928,7 +3975,7 @@ class _PlanAdminCard extends StatelessWidget {
                     Row(
                       children: [
                         Text(
-                          '\$${price.toStringAsFixed(2)}',
+                          '${price.toStringAsFixed(2)} JOD',
                           style: TextStyle(
                             fontFamily: 'Poppins',
                             fontSize: 24,
@@ -4030,8 +4077,8 @@ class _PlanAdminCard extends StatelessWidget {
                   decimal: true,
                 ),
                 decoration: AppTheme.inputDecoration(
-                  'Price (\$)',
-                  Icons.attach_money_rounded,
+                  'Price (JOD)',
+                  Icons.payments_outlined,
                 ),
               ),
               const SizedBox(height: 10),
@@ -4223,8 +4270,8 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
             controller: _priceCtrl,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: AppTheme.inputDecoration(
-              'Price (\$)',
-              Icons.attach_money_rounded,
+              'Price (JOD)',
+              Icons.payments_outlined,
             ),
           ),
           const SizedBox(height: 10),
@@ -5027,7 +5074,7 @@ class _FitStationOrderCard extends StatelessWidget {
                             ),
                           ),
                           Text(
-                            '\$${_safeDouble(item['price']).toStringAsFixed(2)}',
+                            '${_safeDouble(item['price']).toStringAsFixed(2)} JOD',
                             style: AppTheme.body.copyWith(fontSize: 12),
                           ),
                         ],
@@ -5060,7 +5107,7 @@ class _FitStationOrderCard extends StatelessWidget {
                         ),
                       ),
                     Text(
-                      '\$${_safeDouble(data['total']).toStringAsFixed(2)}',
+                      '${_safeDouble(data['total']).toStringAsFixed(2)} JOD',
                       style: AppTheme.subheading.copyWith(
                         fontSize: 15,
                         color: AppTheme.primary,

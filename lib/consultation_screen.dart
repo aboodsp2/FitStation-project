@@ -791,7 +791,7 @@ class _ConsultationScreenState extends State<ConsultationScreen>
           _summaryRow('Time', _selectedTime!),
           _summaryRow(
             'Session Fee',
-            '\$${s.price.toStringAsFixed(0)}/hr',
+            '${s.price.toStringAsFixed(0)} JOD/hr',
             highlight: true,
           ),
           const SizedBox(height: 18),
@@ -1037,7 +1037,7 @@ class _SpecialistCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '\$${s.price.toStringAsFixed(0)}/hr',
+                      '${s.price.toStringAsFixed(0)} JOD/hr',
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 14,
@@ -1460,7 +1460,7 @@ class MyBookingsScreen extends StatelessWidget {
                             ),
                             const Spacer(),
                             Text(
-                              '\$${price.toStringAsFixed(0)}/hr',
+                              '${price.toStringAsFixed(0)} JOD/hr',
                               style: const TextStyle(
                                 fontWeight: FontWeight.w800,
                                 fontSize: 14,
@@ -1771,9 +1771,9 @@ class _BookingDetailScreenState extends State<_BookingDetailScreen> {
                 _row(Icons.access_time_rounded, 'Time', time),
                 const SizedBox(height: 12),
                 _row(
-                  Icons.attach_money_rounded,
+                  Icons.payments_outlined,
                   'Session Fee',
-                  '\$${price.toStringAsFixed(0)}/hr',
+                  '${price.toStringAsFixed(0)} JOD/hr',
                   valueStyle: const TextStyle(
                     fontWeight: FontWeight.w800,
                     fontSize: 15,
@@ -2219,7 +2219,7 @@ class _ConsultationCheckoutScreenState
                       ),
                     ),
                     Text(
-                      '\$${s.price.toStringAsFixed(0)}/hr',
+                      '${s.price.toStringAsFixed(0)} JOD/hr',
                       style: const TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 16,
@@ -2395,7 +2395,7 @@ class _ConsultationCheckoutScreenState
                   style: TextStyle(fontSize: 12, color: Colors.black45),
                 ),
                 Text(
-                  '\$${s.price.toStringAsFixed(0)}/hr',
+                  '${s.price.toStringAsFixed(0)} JOD/hr',
                   style: const TextStyle(
                     fontWeight: FontWeight.w800,
                     fontSize: 20,
@@ -2771,9 +2771,9 @@ class _ConsultationSuccessScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 10),
                     _row(
-                      Icons.attach_money_rounded,
+                      Icons.payments_outlined,
                       'Session Fee',
-                      '\$${price.toStringAsFixed(0)}/hr',
+                      '${price.toStringAsFixed(0)} JOD/hr',
                     ),
                   ],
                 ),

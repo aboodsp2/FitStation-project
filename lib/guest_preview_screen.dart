@@ -660,7 +660,7 @@ class GuestSupplementsPreview extends StatelessWidget {
                             Row(
                               children: [
                                 Text(
-                                  '\$${(item['price'] as double).toStringAsFixed(0)}',
+                                  '${(item['price'] as double).toStringAsFixed(0)} JOD',
                                   style: const TextStyle(
                                     fontFamily: 'Poppins',
                                     fontSize: 15,
@@ -961,25 +961,25 @@ class GuestConsultationPreview extends StatelessWidget {
       'name': 'Ahmed Al-Rashid',
       'specialty': 'Strength & Conditioning',
       'rating': '4.9',
-      'price': '\$60/session',
+      'price': '60 JOD/session',
     },
     {
       'name': 'Sara Mansour',
       'specialty': 'Nutrition & Weight Loss',
       'rating': '4.8',
-      'price': '\$55/session',
+      'price': '55 JOD/session',
     },
     {
       'name': 'Khalid Nasser',
       'specialty': 'Muscle Building',
       'rating': '4.7',
-      'price': '\$65/session',
+      'price': '65 JOD/session',
     },
     {
       'name': 'Lara Haddad',
       'specialty': 'Yoga & Recovery',
       'rating': '5.0',
-      'price': '\$50/session',
+      'price': '50 JOD/session',
     },
   ];
 

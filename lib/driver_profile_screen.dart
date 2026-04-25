@@ -494,7 +494,7 @@ class DriverProfileScreen extends StatelessWidget {
       if (context.mounted) {
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(builder: (_) => const AuthFlowHandler()),
+          MaterialPageRoute(builder: (_) => const AuthFlowHandler(startAtLogin: true)),
           (route) => false,
         );
       }

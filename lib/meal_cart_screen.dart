@@ -167,6 +167,12 @@ class MealCartScreen extends StatefulWidget {
 }
 
 class _MealCartScreenState extends State<MealCartScreen> {
+  final _promoCtrl = TextEditingController();
+  bool _promoApplied = false;
+  bool _promoError = false;
+  static const _validCode = 'meal20';
+  static const _discount = 0.20;
+
   @override
   void initState() {
     super.initState();
@@ -176,11 +182,39 @@ class _MealCartScreenState extends State<MealCartScreen> {
   @override
   void dispose() {
     MealCartManager().removeListener(_refresh);
+    _promoCtrl.dispose();
     super.dispose();
   }
 
   void _refresh() {
     if (mounted) setState(() {});
+  }
+
+  void _applyPromo() {
+    final code = _promoCtrl.text.trim().toLowerCase();
+    if (code == _validCode) {
+      setState(() {
+        _promoApplied = true;
+        _promoError = false;
+      });
+      FocusScope.of(context).unfocus();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            '🎉 20% discount applied!',
+            style: TextStyle(fontFamily: 'Poppins'),
+          ),
+          backgroundColor: Colors.green.shade600,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    } else {
+      setState(() {
+        _promoApplied = false;
+        _promoError = true;
+      });
+    }
   }
 
   void _clearCart() {
@@ -210,6 +244,11 @@ class _MealCartScreenState extends State<MealCartScreen> {
             ),
             onPressed: () {
               MealCartManager().clear();
+              setState(() {
+                _promoApplied = false;
+                _promoError = false;
+                _promoCtrl.clear();
+              });
               Navigator.pop(context);
             },
             child: const Text(
@@ -245,7 +284,9 @@ class _MealCartScreenState extends State<MealCartScreen> {
   @override
   Widget build(BuildContext context) {
     final items = MealCartManager().items;
-    final total = MealCartManager().total;
+    final subtotal = MealCartManager().total;
+    final discount = _promoApplied ? subtotal * _discount : 0.0;
+    final total = subtotal - discount;
 
     // ── Empty state ────────────────────────────────────────────────────────
     if (items.isEmpty) {
@@ -403,9 +444,86 @@ class _MealCartScreenState extends State<MealCartScreen> {
               decoration: AppTheme.card(radius: 22),
               child: Column(
                 children: [
-                  _summaryRow('Subtotal', '\$${total.toStringAsFixed(2)}'),
+                  // ── Promo code box ────────────────────────────────────────
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.background,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppTheme.divider),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.local_offer_outlined,
+                          color: _promoApplied ? Colors.green.shade600 : AppTheme.accent,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: _promoCtrl,
+                            enabled: !_promoApplied,
+                            textCapitalization: TextCapitalization.characters,
+                            style: const TextStyle(
+                              fontFamily: 'Poppins',
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            decoration: InputDecoration(
+                              hintText: _promoApplied ? 'MEAL20 applied ✓' : 'Enter promo code',
+                              hintStyle: TextStyle(
+                                fontFamily: 'Poppins',
+                                fontSize: 13,
+                                color: _promoApplied ? Colors.green.shade600 : AppTheme.muted,
+                              ),
+                              border: InputBorder.none,
+                              isDense: true,
+                              errorText: _promoError ? 'Invalid — try MEAL20' : null,
+                              errorStyle: const TextStyle(fontFamily: 'Poppins', fontSize: 11),
+                            ),
+                            onSubmitted: (_) => _applyPromo(),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        _promoApplied
+                            ? GestureDetector(
+                                onTap: () => setState(() {
+                                  _promoApplied = false;
+                                  _promoCtrl.clear();
+                                }),
+                                child: const Icon(Icons.close_rounded, color: AppTheme.muted, size: 20),
+                              )
+                            : GestureDetector(
+                                onTap: _applyPromo,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.primary,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Text(
+                                    'Apply',
+                                    style: TextStyle(
+                                      fontFamily: 'Poppins',
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _summaryRow('Subtotal', '${subtotal.toStringAsFixed(2)} JOD'),
                   const SizedBox(height: 8),
                   _summaryRow('Delivery', 'Free', green: true),
+                  if (_promoApplied) ...[
+                    const SizedBox(height: 8),
+                    _summaryRow('Promo (MEAL20 -20%)', '-${discount.toStringAsFixed(2)} JOD', green: true),
+                  ],
                   Divider(height: 22, color: AppTheme.divider),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -415,7 +533,7 @@ class _MealCartScreenState extends State<MealCartScreen> {
                         style: AppTheme.subheading.copyWith(fontSize: 16),
                       ),
                       Text(
-                        '\$${total.toStringAsFixed(2)}',
+                        '${total.toStringAsFixed(2)} JOD',
                         style: const TextStyle(
                           fontFamily: 'Poppins',
                           fontWeight: FontWeight.w800,
@@ -521,7 +639,7 @@ class _MealCartTileState extends State<_MealCartTile> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '\$${item.price.toStringAsFixed(2)} / meal',
+                  '${item.price.toStringAsFixed(2)} JOD / meal',
                   style: AppTheme.body.copyWith(
                     color: AppTheme.primary,
                     fontSize: 12,
@@ -530,7 +648,7 @@ class _MealCartTileState extends State<_MealCartTile> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Subtotal: \$${(item.price * item.quantity).toStringAsFixed(2)}',
+                  'Subtotal: ${(item.price * item.quantity).toStringAsFixed(2)} JOD',
                   style: AppTheme.label.copyWith(
                     fontSize: 11,
                     color: AppTheme.muted,
