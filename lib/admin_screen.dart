@@ -1759,15 +1759,57 @@ class _FullOrderCardState extends State<_FullOrderCard> {
         final driverId = snap.docs.first.id;
         await _propagate('assigned', driverId: driverId);
       } else {
-        // No driver online — mark confirmed so a driver can self-assign later
-        await _propagate('confirmed');
+        // No drivers online — block acceptance entirely
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Order accepted. No driver available now — it will appear in Available Orders.',
+          showDialog(
+            context: context,
+            builder: (_) => AlertDialog(
+              backgroundColor: AppTheme.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
               ),
-              backgroundColor: Colors.orange,
+              title: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.delivery_dining_outlined,
+                      color: Colors.orange,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  const Text(
+                    'No Drivers Online',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+              content: const Text(
+                'There are no drivers currently online. The order cannot be accepted until at least one driver goes online.',
+                style: TextStyle(fontFamily: 'Poppins', fontSize: 13),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text(
+                    'OK',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.primary,
+                    ),
+                  ),
+                ),
+              ],
             ),
           );
         }
@@ -3601,22 +3643,7 @@ class _FitStationMealPlansTab extends StatefulWidget {
       _FitStationMealPlansTabState();
 }
 
-class _FitStationMealPlansTabState extends State<_FitStationMealPlansTab>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabCtrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabCtrl = TabController(length: 2, vsync: this);
-  }
-
-  @override
-  void dispose() {
-    _tabCtrl.dispose();
-    super.dispose();
-  }
-
+class _FitStationMealPlansTabState extends State<_FitStationMealPlansTab> {
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -3657,48 +3684,8 @@ class _FitStationMealPlansTabState extends State<_FitStationMealPlansTab>
             ],
           ),
         ),
-        const SizedBox(height: 14),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Container(
-            height: 44,
-            decoration: BoxDecoration(
-              color: AppTheme.divider.withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(22),
-            ),
-            child: TabBar(
-              controller: _tabCtrl,
-              indicator: BoxDecoration(
-                color: AppTheme.primary,
-                borderRadius: BorderRadius.circular(22),
-              ),
-              indicatorSize: TabBarIndicatorSize.tab,
-              labelStyle: const TextStyle(
-                fontFamily: 'Poppins',
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-              ),
-              unselectedLabelStyle: const TextStyle(
-                fontFamily: 'Poppins',
-                fontSize: 13,
-              ),
-              labelColor: Colors.white,
-              unselectedLabelColor: AppTheme.muted,
-              dividerColor: Colors.transparent,
-              tabs: const [
-                Tab(text: 'Plans'),
-                Tab(text: 'Orders'),
-              ],
-            ),
-          ),
-        ),
         const SizedBox(height: 12),
-        Expanded(
-          child: TabBarView(
-            controller: _tabCtrl,
-            children: [_FitStationPlansTab(), _FitStationPlanOrdersTab()],
-          ),
-        ),
+        Expanded(child: _FitStationPlansTab()),
       ],
     );
   }

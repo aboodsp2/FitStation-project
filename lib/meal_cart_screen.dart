@@ -234,7 +234,6 @@ class _MealCartScreenState extends State<MealCartScreen> {
         builder: (_) => CheckoutScreen(
           total: total,
           cartItems: cartItems,
-          orderType: OrderType.meal,
           onOrderPlaced: () {
             MealCartManager().clear();
           },

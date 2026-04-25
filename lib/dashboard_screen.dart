@@ -106,11 +106,27 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   int _tab = 0;
   int _cartCount = 0;
+  bool _isAdmin = false;
 
   @override
   void initState() {
     super.initState();
     CartManager().addListener(_onCart);
+    _checkAdmin();
+  }
+
+  Future<void> _checkAdmin() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    // Check admins collection by email
+    final snap = await FirebaseFirestore.instance
+        .collection('admins')
+        .where('email', isEqualTo: user.email)
+        .limit(1)
+        .get();
+    if (mounted) {
+      setState(() => _isAdmin = snap.docs.isNotEmpty);
+    }
   }
 
   @override
@@ -138,6 +154,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 const AboutScreen(),
                 const MyOrdersScreen(),
                 const ProfileSection(),
+                if (_isAdmin) const AdminBookingsPanel(),
               ],
             ),
             _glassNav(),
@@ -180,6 +197,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               _ni(1, Icons.info_outline_rounded, "About"),
               _ni(2, Icons.receipt_long_outlined, "Orders"),
               _ni(3, Icons.person_outline_rounded, "Profile"),
+              if (_isAdmin) _ni(4, Icons.admin_panel_settings_rounded, "Admin"),
             ],
           ),
         ),
@@ -820,10 +838,6 @@ class _HomeTabState extends State<_HomeTab> {
                                   const SizedBox(height: 12),
                                   GestureDetector(
                                     onTap: () {
-                                      if (GuestManager().isGuest) {
-                                        showGuestSignupSheet(context);
-                                        return;
-                                      }
                                       final action = b["action"] as String;
                                       switch (action) {
                                         case "supplements":
@@ -861,34 +875,16 @@ class _HomeTabState extends State<_HomeTab> {
                                         vertical: 8,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: GuestManager().isGuest
-                                            ? Colors.white.withOpacity(0.25)
-                                            : AppTheme.accent,
+                                        color: AppTheme.accent,
                                         borderRadius: BorderRadius.circular(20),
                                       ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          if (GuestManager().isGuest)
-                                            const Padding(
-                                              padding: EdgeInsets.only(
-                                                right: 5,
-                                              ),
-                                              child: Icon(
-                                                Icons.lock_rounded,
-                                                color: Colors.white,
-                                                size: 11,
-                                              ),
-                                            ),
-                                          Text(
-                                            b["btn"] as String,
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ],
+                                      child: Text(
+                                        b["btn"] as String,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12,
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -992,51 +988,28 @@ class _HomeTabState extends State<_HomeTab> {
                                 ),
                                 const SizedBox(height: 12),
                                 GestureDetector(
-                                  onTap: () {
-                                    if (GuestManager().isGuest) {
-                                      showGuestSignupSheet(context);
-                                      return;
-                                    }
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) =>
-                                            DealsScreen(deals: deals),
-                                      ),
-                                    );
-                                  },
+                                  onTap: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => DealsScreen(deals: deals),
+                                    ),
+                                  ),
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 18,
                                       vertical: 8,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: GuestManager().isGuest
-                                          ? Colors.white.withOpacity(0.25)
-                                          : AppTheme.accent,
+                                      color: AppTheme.accent,
                                       borderRadius: BorderRadius.circular(20),
                                     ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        if (GuestManager().isGuest)
-                                          const Padding(
-                                            padding: EdgeInsets.only(right: 5),
-                                            child: Icon(
-                                              Icons.lock_rounded,
-                                              color: Colors.white,
-                                              size: 11,
-                                            ),
-                                          ),
-                                        const Text(
-                                          "Shop Deals",
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ],
+                                    child: const Text(
+                                      "Shop Deals",
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -1223,6 +1196,438 @@ class _HomeTabState extends State<_HomeTab> {
           ),
         );
       },
+    );
+  }
+}
+
+// ─── ADMIN BOOKINGS PANEL ────────────────────────────────────────────────────
+class AdminBookingsPanel extends StatefulWidget {
+  const AdminBookingsPanel({super.key});
+  @override
+  State<AdminBookingsPanel> createState() => _AdminBookingsPanelState();
+}
+
+class _AdminBookingsPanelState extends State<AdminBookingsPanel>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabCtrl;
+  final _db = FirebaseFirestore.instance;
+
+  static const _tabs = ['All', 'Pending', 'Confirmed', 'Cancelled'];
+
+  @override
+  void initState() {
+    super.initState();
+    _tabCtrl = TabController(length: _tabs.length, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabCtrl.dispose();
+    super.dispose();
+  }
+
+  Query<Map<String, dynamic>> _query(String tab) {
+    final base = _db
+        .collection('bookings')
+        .orderBy('createdAt', descending: true);
+    if (tab == 'All') return base;
+    return base.where('status', isEqualTo: tab.toLowerCase());
+  }
+
+  Future<void> _updateStatus(String docId, String status) async {
+    await _db.collection('bookings').doc(docId).update({'status': status});
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Booking $status.'),
+          backgroundColor: status == 'confirmed'
+              ? Colors.green
+              : Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppTheme.background,
+      appBar: AppBar(
+        backgroundColor: AppTheme.background,
+        elevation: 0,
+        automaticallyImplyLeading: false,
+        title: const Text(
+          'Bookings — Admin',
+          style: TextStyle(
+            fontFamily: 'Poppins',
+            fontWeight: FontWeight.w700,
+            fontSize: 18,
+            color: AppTheme.dark,
+          ),
+        ),
+        centerTitle: false,
+        bottom: TabBar(
+          controller: _tabCtrl,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          labelColor: AppTheme.primary,
+          unselectedLabelColor: AppTheme.muted,
+          indicatorColor: AppTheme.primary,
+          indicatorWeight: 2.5,
+          labelStyle: const TextStyle(
+            fontFamily: 'Poppins',
+            fontWeight: FontWeight.w600,
+            fontSize: 13,
+          ),
+          tabs: _tabs.map((t) => Tab(text: t)).toList(),
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabCtrl,
+        children: _tabs
+            .map(
+              (tab) => _BookingsList(
+                query: _query(tab),
+                onUpdateStatus: _updateStatus,
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+}
+
+class _BookingsList extends StatelessWidget {
+  final Query<Map<String, dynamic>> query;
+  final Future<void> Function(String docId, String status) onUpdateStatus;
+
+  const _BookingsList({required this.query, required this.onUpdateStatus});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: query.snapshots(),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(color: AppTheme.primary),
+          );
+        }
+        if (snap.hasError) {
+          return Center(
+            child: Text(
+              'Error loading bookings.\n${snap.error}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontFamily: 'Poppins',
+                color: AppTheme.muted,
+              ),
+            ),
+          );
+        }
+        final docs = snap.data?.docs ?? [];
+        if (docs.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.calendar_today_rounded,
+                  size: 48,
+                  color: AppTheme.muted.withValues(alpha: 0.4),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'No bookings found',
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 15,
+                    color: AppTheme.muted,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+        return ListView.separated(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
+          itemCount: docs.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 12),
+          itemBuilder: (_, i) =>
+              _BookingCard(doc: docs[i], onUpdateStatus: onUpdateStatus),
+        );
+      },
+    );
+  }
+}
+
+class _BookingCard extends StatelessWidget {
+  final QueryDocumentSnapshot<Map<String, dynamic>> doc;
+  final Future<void> Function(String docId, String status) onUpdateStatus;
+
+  const _BookingCard({required this.doc, required this.onUpdateStatus});
+
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'confirmed':
+        return Colors.green;
+      case 'cancelled':
+        return Colors.red;
+      default:
+        return Colors.orange;
+    }
+  }
+
+  IconData _typeIcon(String? type) {
+    if (type == 'nutritionist') return Icons.restaurant_menu_rounded;
+    return Icons.fitness_center_rounded;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final d = doc.data();
+    final status = d['status'] as String? ?? 'pending';
+    final name = d['specialistName'] as String? ?? '—';
+    final type = d['specialistType'] as String? ?? 'pt';
+    final specialty = d['specialty'] as String? ?? '—';
+    final date = d['date'] as String? ?? '—';
+    final time = d['time'] as String? ?? '—';
+    final address = d['address'] as String? ?? '';
+    final lat = d['locationLat'];
+    final lng = d['locationLng'];
+    final hasPin = d['hasMapPin'] == true;
+    final price = (d['price'] as num?)?.toDouble() ?? 0;
+    final userId = d['userId'] as String? ?? '—';
+
+    final statusColor = _statusColor(status);
+    final isPending = status == 'pending';
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppTheme.divider, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.primary.withValues(alpha: 0.06),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Header row ─────────────────────────────────────────────────
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    _typeIcon(type),
+                    color: AppTheme.primary,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        style: const TextStyle(
+                          fontFamily: 'Poppins',
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                          color: AppTheme.dark,
+                        ),
+                      ),
+                      Text(
+                        specialty,
+                        style: const TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 11,
+                          color: AppTheme.muted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Status badge
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: statusColor.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Text(
+                    status[0].toUpperCase() + status.substring(1),
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: statusColor,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 14),
+            const Divider(height: 1, color: AppTheme.divider),
+            const SizedBox(height: 12),
+
+            // ── Details grid ───────────────────────────────────────────────
+            _detailRow(
+              Icons.calendar_today_rounded,
+              'Date & Time',
+              '$date  •  $time',
+            ),
+            const SizedBox(height: 6),
+            _detailRow(
+              Icons.attach_money_rounded,
+              'Session Fee',
+              '\$${price.toStringAsFixed(0)}/hr',
+            ),
+            const SizedBox(height: 6),
+            _detailRow(
+              Icons.person_outline_rounded,
+              'User ID',
+              userId,
+              mono: true,
+            ),
+            const SizedBox(height: 6),
+
+            // Address
+            if (address.isNotEmpty)
+              _detailRow(Icons.home_outlined, 'Address', address),
+
+            // Map coordinates
+            if (hasPin && lat != null && lng != null) ...[
+              const SizedBox(height: 6),
+              _detailRow(
+                Icons.location_on_rounded,
+                'Location',
+                '${(lat as num).toStringAsFixed(5)}, ${(lng as num).toStringAsFixed(5)}',
+              ),
+            ],
+
+            if (!hasPin && address.isEmpty) ...[
+              const SizedBox(height: 6),
+              _detailRow(
+                Icons.location_off_rounded,
+                'Location',
+                'Not provided',
+                valueColor: Colors.orange.shade700,
+              ),
+            ],
+
+            // ── Action buttons (only for pending bookings) ─────────────────
+            if (isPending) ...[
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.close_rounded, size: 16),
+                      label: const Text(
+                        'Cancel',
+                        style: TextStyle(fontFamily: 'Poppins', fontSize: 13),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red,
+                        side: const BorderSide(color: Colors.red),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                      ),
+                      onPressed: () => onUpdateStatus(doc.id, 'cancelled'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.check_rounded, size: 16),
+                      label: const Text(
+                        'Confirm',
+                        style: TextStyle(fontFamily: 'Poppins', fontSize: 13),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                      ),
+                      onPressed: () => onUpdateStatus(doc.id, 'confirmed'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _detailRow(
+    IconData icon,
+    String label,
+    String value, {
+    bool mono = false,
+    Color? valueColor,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 14, color: AppTheme.muted),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 80,
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontFamily: 'Poppins',
+              fontSize: 11,
+              color: AppTheme.muted,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: TextStyle(
+              fontFamily: mono ? 'monospace' : 'Poppins',
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: valueColor ?? AppTheme.dark,
+            ),
+            overflow: TextOverflow.ellipsis,
+            maxLines: 2,
+          ),
+        ),
+      ],
     );
   }
 }

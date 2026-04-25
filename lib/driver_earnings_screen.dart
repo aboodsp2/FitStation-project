@@ -278,14 +278,10 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen> {
         break;
     }
 
-    Query query = FirebaseFirestore.instance
+    final query = FirebaseFirestore.instance
         .collection('deliveryOrders')
         .where('driverId', isEqualTo: user.uid)
         .where('status', isEqualTo: 'delivered');
-
-    if (startDate != null) {
-      query = query.where('deliveredAt', isGreaterThanOrEqualTo: startDate);
-    }
 
     return StreamBuilder<QuerySnapshot>(
       stream: query.snapshots(),
@@ -302,10 +298,16 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen> {
           );
         }
 
-        final orders = snapshot.data?.docs
-                .map((doc) => DeliveryOrder.fromFirestore(doc))
-                .toList() ??
-            []
+        final orders = (snapshot.data?.docs
+                    .map((doc) => DeliveryOrder.fromFirestore(doc))
+                    .where((order) {
+                      if (startDate == null) return true;
+                      final deliveredAt = order.deliveredAt;
+                      return deliveredAt != null &&
+                          !deliveredAt.isBefore(startDate);
+                    })
+                    .toList() ??
+                [])
           ..sort((a, b) {
             final aTime = (a.deliveredAt ?? a.date).millisecondsSinceEpoch;
             final bTime = (b.deliveredAt ?? b.date).millisecondsSinceEpoch;

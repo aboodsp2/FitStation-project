@@ -13,6 +13,8 @@ class DriverOrdersScreen extends StatefulWidget {
 }
 
 class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
+  String _selectedTab = 'available';
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -22,35 +24,65 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
             child: Text(
-              'My Deliveries',
+              'Orders',
               style: AppTheme.subheading.copyWith(fontSize: 18),
             ),
           ),
-          Expanded(child: _buildMyDeliveries()),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: AppTheme.surface,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppTheme.primary.withValues(alpha: 0.06),
+                    blurRadius: 12,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  _buildTab('available', 'Available'),
+                  _buildTab('mydeliveries', 'My Deliveries'),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: _selectedTab == 'available'
+                ? _buildAvailableOrders()
+                : _buildMyDeliveries(),
+          ),
         ],
       ),
     );
   }
 
   Widget _buildTab(String tab, String label) {
-    final isSelected = tab == 'mydeliveries';
+    final isSelected = _selectedTab == tab;
 
-    return GestureDetector(
-      onTap: () {},
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: isSelected ? AppTheme.primary : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Text(
-          label,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontFamily: 'Poppins',
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: isSelected ? Colors.white : AppTheme.muted,
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _selectedTab = tab),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? AppTheme.primary : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: 'Poppins',
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: isSelected ? Colors.white : AppTheme.muted,
+            ),
           ),
         ),
       ),
@@ -169,7 +201,7 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
             width: 100,
             height: 100,
             decoration: BoxDecoration(
-              color: AppTheme.accent.withOpacity(0.08),
+              color: AppTheme.accent.withValues(alpha:0.08),
               shape: BoxShape.circle,
             ),
             child: Icon(icon, size: 48, color: AppTheme.accent),
@@ -192,6 +224,24 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
     if (user == null) return;
 
     try {
+      final driverDoc = await FirebaseFirestore.instance
+          .collection('drivers')
+          .doc(user.uid)
+          .get();
+
+      final isAvailable = driverDoc.data()?['isAvailable'] as bool? ?? false;
+      if (!isAvailable) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('You must be online to accept orders. Toggle your status first.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
       final batch = FirebaseFirestore.instance.batch();
 
       // Update delivery order
@@ -228,7 +278,6 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
         ),
       );
 
-      setState(() {});
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -259,7 +308,7 @@ class _AvailableOrderCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: AppTheme.accent.withOpacity(0.06),
+              color: AppTheme.accent.withValues(alpha:0.06),
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(16),
                 topRight: Radius.circular(16),
@@ -299,7 +348,7 @@ class _AvailableOrderCard extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: Colors.green.withOpacity(0.1),
+                    color: Colors.green.withValues(alpha:0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -517,7 +566,7 @@ class _StatusBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha:0.1),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
@@ -738,7 +787,7 @@ class _OrderDetailsScreenState extends State<_OrderDetailsScreen> {
                 color: AppTheme.surface,
                 boxShadow: [
                   BoxShadow(
-                    color: AppTheme.primary.withOpacity(0.08),
+                    color: AppTheme.primary.withValues(alpha:0.08),
                     blurRadius: 16,
                     offset: const Offset(0, -4),
                   ),

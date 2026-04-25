@@ -560,6 +560,113 @@ class _SignInPageState extends State<SignInPage> {
     }
   }
 
+  Future<void> _forgotPassword() async {
+    final emailCtrl = TextEditingController(text: _emailCtrl.text.trim());
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          'Reset Password',
+          style: TextStyle(
+            fontFamily: 'Poppins',
+            fontWeight: FontWeight.w700,
+            fontSize: 17,
+            color: AppTheme.dark,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Enter your email address and we\'ll send you a link to reset your password.',
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                fontSize: 13,
+                color: AppTheme.muted,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: emailCtrl,
+              keyboardType: TextInputType.emailAddress,
+              style: const TextStyle(fontFamily: 'Poppins', fontSize: 14),
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Icons.email_outlined, color: AppTheme.primary),
+                hintText: 'Email address',
+                hintStyle: const TextStyle(fontFamily: 'Poppins', color: AppTheme.muted),
+                filled: true,
+                fillColor: AppTheme.background,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(fontFamily: 'Poppins', color: AppTheme.muted),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () async {
+              final email = emailCtrl.text.trim();
+              if (email.isEmpty) return;
+              Navigator.pop(ctx);
+              try {
+                await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: const Text(
+                        'Password reset email sent. Check your inbox.',
+                        style: TextStyle(fontFamily: 'Poppins'),
+                      ),
+                      backgroundColor: Colors.green.shade700,
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  );
+                }
+              } on FirebaseAuthException catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        e.message ?? 'Failed to send reset email.',
+                        style: const TextStyle(fontFamily: 'Poppins'),
+                      ),
+                      backgroundColor: Colors.redAccent,
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text(
+              'Send',
+              style: TextStyle(fontFamily: 'Poppins', color: Colors.white, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+    emailCtrl.dispose();
+  }
+
   Future<void> _login() async {
     if (_emailCtrl.text.isEmpty || _passwordCtrl.text.isEmpty) {
       ScaffoldMessenger.of(
@@ -755,7 +862,26 @@ class _SignInPageState extends State<SignInPage> {
                 ],
               ),
             ),
-            const SizedBox(height: 26),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 40),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: GestureDetector(
+                  onTap: _forgotPassword,
+                  child: const Text(
+                    'Forgot Password?',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 13,
+                      decoration: TextDecoration.underline,
+                      decorationColor: Colors.white70,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
             _loading
                 ? const CircularProgressIndicator(color: Colors.white)
                 : _Button(

@@ -108,7 +108,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     final List<Widget> screens = [
       const DriverOrdersScreen(),
       const DriverEarningsScreen(),
-      DriverProfileScreen(driverProfile: _driverProfile),
+      const DriverProfileScreen(),
     ];
 
     return Scaffold(

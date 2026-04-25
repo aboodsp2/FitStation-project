@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
+import 'app_theme.dart';
+import 'checkout_screen.dart' show ConsultMapPicker;
 import 'dashboard_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -296,16 +301,11 @@ class ConsultationScreen extends StatefulWidget {
 
 class _ConsultationScreenState extends State<ConsultationScreen>
     with SingleTickerProviderStateMixin {
-  static const Color orange = Color(0xFFF37E33);
-  static const Color bg = Color(0xFFF8F4EF);
-  static const Color dark = Color(0xFF1A1A1A);
-
   late TabController _tabController;
   Specialist? _selected;
   DateTime? _selectedDate;
   String? _selectedTime;
   bool _loadingSlots = false;
-  bool _confirming = false;
   Map<String, bool> _slotAvailability = {};
 
   final _scrollCtrl = ScrollController();
@@ -392,7 +392,7 @@ class _ConsultationScreenState extends State<ConsultationScreen>
       lastDate: DateTime.now().add(const Duration(days: 60)),
       builder: (ctx, child) => Theme(
         data: ThemeData.light().copyWith(
-          colorScheme: const ColorScheme.light(primary: orange),
+          colorScheme: const ColorScheme.light(primary: AppTheme.primary),
         ),
         child: child!,
       ),
@@ -406,177 +406,25 @@ class _ConsultationScreenState extends State<ConsultationScreen>
     }
   }
 
-  Future<void> _confirmAndPay() async {
-    final s = _selected!;
-    final uid = _auth.currentUser?.uid ?? 'guest';
-    final slotRef = _db
-        .collection('specialists')
-        .doc(s.id)
-        .collection('availability')
-        .doc(_dateKey);
-    final bookingRef = _db.collection('bookings').doc();
-
-    setState(() => _confirming = true);
-
-    try {
-      await _db.runTransaction((tx) async {
-        final snap = await tx.get(slotRef);
-        if (snap.data()?[_selectedTime!] == false) {
-          throw Exception('slot_taken');
-        }
-        tx.set(slotRef, {_selectedTime!: false}, SetOptions(merge: true));
-        tx.set(bookingRef, {
-          'userId': uid,
-          'specialistId': s.id,
-          'specialistName': s.name,
-          'specialistType': s.type,
-          'specialty': s.specialty,
-          'date': _dateKey,
-          'time': _selectedTime,
-          'price': s.price,
-          'status': 'pending',
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-      });
-
-      if (!mounted) return;
-      setState(() {
-        _confirming = false;
-        _slotAvailability[_selectedTime!] = false;
-        _selected = null;
-        _selectedDate = null;
-        _selectedTime = null;
-        _slotAvailability = {};
-      });
-
-      // Show success bottom sheet — booking goes only to My Bookings
-      await showModalBottomSheet(
-        context: context,
-        backgroundColor: Colors.transparent,
-        isDismissible: true,
-        builder: (_) => Container(
-          margin: const EdgeInsets.all(16),
-          padding: const EdgeInsets.all(28),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 72,
-                height: 72,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1D9E75).withValues(alpha: 0.12),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.check_circle_rounded,
-                  color: Color(0xFF1D9E75),
-                  size: 40,
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Booking Submitted!',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18,
-                  color: Color(0xFF1A1A1A),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Your session with ${s.name} is pending confirmation.',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: Colors.black54,
-                  height: 1.5,
-                ),
-              ),
-              const SizedBox(height: 22),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: orange,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                  onPressed: () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            MyBookingsScreen(uid: _auth.currentUser?.uid ?? ''),
-                      ),
-                    );
-                  },
-                  child: const Text(
-                    'View My Bookings',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text(
-                  'Back to Consultation',
-                  style: TextStyle(color: Colors.black45, fontSize: 13),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    } on Exception catch (e) {
-      if (!mounted) return;
-      setState(() => _confirming = false);
-      final isTaken = e.toString().contains('slot_taken');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            isTaken
-                ? '⚠️ That slot was just taken — please choose another time.'
-                : 'Something went wrong. Please try again.',
-          ),
-          backgroundColor: isTaken ? Colors.orange : Colors.red,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-      );
-      if (isTaken) _loadAvailability();
-    }
-  }
-
   // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: bg,
+      backgroundColor: AppTheme.background,
       appBar: AppBar(
-        backgroundColor: bg,
+        backgroundColor: AppTheme.background,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: dark),
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: AppTheme.dark,
+          ),
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
           'Book Consultation',
           style: TextStyle(
-            color: dark,
+            color: AppTheme.dark,
             fontWeight: FontWeight.bold,
             fontSize: 18,
           ),
@@ -599,19 +447,25 @@ class _ConsultationScreenState extends State<ConsultationScreen>
                   vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: orange.withValues(alpha: 0.12),
+                  color: AppTheme.primary.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: orange.withValues(alpha: 0.35)),
+                  border: Border.all(
+                    color: AppTheme.primary.withValues(alpha: 0.35),
+                  ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: const [
-                    Icon(Icons.history_rounded, color: orange, size: 16),
+                    Icon(
+                      Icons.history_rounded,
+                      color: AppTheme.primary,
+                      size: 16,
+                    ),
                     SizedBox(width: 5),
                     Text(
                       'My Bookings',
                       style: TextStyle(
-                        color: orange,
+                        color: AppTheme.primary,
                         fontWeight: FontWeight.w600,
                         fontSize: 12,
                       ),
@@ -655,7 +509,7 @@ class _ConsultationScreenState extends State<ConsultationScreen>
         child: TabBar(
           controller: _tabController,
           indicator: BoxDecoration(
-            color: orange,
+            color: AppTheme.primary,
             borderRadius: BorderRadius.circular(30),
           ),
           indicatorSize: TabBarIndicatorSize.tab,
@@ -705,7 +559,7 @@ class _ConsultationScreenState extends State<ConsultationScreen>
             style: TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: 15,
-              color: dark,
+              color: AppTheme.dark,
             ),
           ),
         ),
@@ -756,7 +610,7 @@ class _ConsultationScreenState extends State<ConsultationScreen>
           style: TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: 15,
-            color: dark,
+            color: AppTheme.dark,
           ),
         ),
         const SizedBox(height: 12),
@@ -780,7 +634,7 @@ class _ConsultationScreenState extends State<ConsultationScreen>
               children: [
                 const Icon(
                   Icons.calendar_today_rounded,
-                  color: orange,
+                  color: AppTheme.primary,
                   size: 20,
                 ),
                 const SizedBox(width: 14),
@@ -789,7 +643,9 @@ class _ConsultationScreenState extends State<ConsultationScreen>
                       ? 'Select a date'
                       : DateFormat('EEEE, d MMMM yyyy').format(_selectedDate!),
                   style: TextStyle(
-                    color: _selectedDate == null ? Colors.black38 : dark,
+                    color: _selectedDate == null
+                        ? Colors.black38
+                        : AppTheme.dark,
                     fontWeight: _selectedDate == null
                         ? FontWeight.normal
                         : FontWeight.w600,
@@ -812,7 +668,7 @@ class _ConsultationScreenState extends State<ConsultationScreen>
                 style: TextStyle(
                   fontWeight: FontWeight.w700,
                   fontSize: 13,
-                  color: dark,
+                  color: AppTheme.dark,
                 ),
               ),
               const SizedBox(width: 10),
@@ -836,7 +692,10 @@ class _ConsultationScreenState extends State<ConsultationScreen>
             const Center(
               child: Padding(
                 padding: EdgeInsets.all(16),
-                child: CircularProgressIndicator(color: orange, strokeWidth: 2),
+                child: CircularProgressIndicator(
+                  color: AppTheme.primary,
+                  strokeWidth: 2,
+                ),
               ),
             )
           else
@@ -858,14 +717,14 @@ class _ConsultationScreenState extends State<ConsultationScreen>
                     ),
                     decoration: BoxDecoration(
                       color: chosen
-                          ? orange
+                          ? AppTheme.primary
                           : available
                           ? Colors.green.shade50
                           : Colors.red.shade50,
                       borderRadius: BorderRadius.circular(22),
                       border: Border.all(
                         color: chosen
-                            ? orange
+                            ? AppTheme.primary
                             : available
                             ? Colors.green.shade300
                             : Colors.red.shade200,
@@ -919,7 +778,7 @@ class _ConsultationScreenState extends State<ConsultationScreen>
             style: TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: 15,
-              color: dark,
+              color: AppTheme.dark,
             ),
           ),
           const SizedBox(height: 12),
@@ -941,31 +800,42 @@ class _ConsultationScreenState extends State<ConsultationScreen>
             height: 54,
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: orange,
+                backgroundColor: AppTheme.primary,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
                 elevation: 4,
-                shadowColor: orange.withValues(alpha: 0.4),
+                shadowColor: AppTheme.primary.withValues(alpha: 0.4),
               ),
-              onPressed: _confirming ? null : _confirmAndPay,
-              child: _confirming
-                  ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2.5,
-                      ),
-                    )
-                  : const Text(
-                      'Confirm & Pay  →',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                      ),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ConsultationCheckoutScreen(
+                      specialist: s,
+                      dateKey: _dateKey,
+                      selectedDate: _selectedDate!,
+                      selectedTime: _selectedTime!,
+                      onBookingConfirmed: () {
+                        setState(() {
+                          _selected = null;
+                          _selectedDate = null;
+                          _selectedTime = null;
+                          _slotAvailability = {};
+                        });
+                      },
                     ),
+                  ),
+                );
+              },
+              child: const Text(
+                'Continue to Checkout  →',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                ),
+              ),
             ),
           ),
         ],
@@ -988,7 +858,7 @@ class _ConsultationScreenState extends State<ConsultationScreen>
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.bold,
-              color: highlight ? orange : dark,
+              color: highlight ? AppTheme.primary : AppTheme.dark,
             ),
           ),
         ],
@@ -1017,9 +887,6 @@ class _SpecialistCard extends StatelessWidget {
   final bool isSelected;
   final VoidCallback onTap;
 
-  static const Color orange = Color(0xFFF37E33);
-  static const Color dark = Color(0xFF1A1A1A);
-
   Color _hex(String h) => Color(int.parse('FF$h', radix: 16));
 
   @override
@@ -1032,16 +899,18 @@ class _SpecialistCard extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: isSelected ? orange.withValues(alpha: 0.05) : Colors.white,
+          color: isSelected
+              ? AppTheme.primary.withValues(alpha: 0.05)
+              : Colors.white,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? orange : Colors.transparent,
+            color: isSelected ? AppTheme.primary : Colors.transparent,
             width: 2,
           ),
           boxShadow: [
             BoxShadow(
               color: isSelected
-                  ? orange.withValues(alpha: 0.12)
+                  ? AppTheme.primary.withValues(alpha: 0.12)
                   : Colors.black.withValues(alpha: 0.05),
               blurRadius: 14,
               offset: const Offset(0, 4),
@@ -1084,7 +953,7 @@ class _SpecialistCard extends StatelessWidget {
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 15,
-                          color: dark,
+                          color: AppTheme.dark,
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -1116,14 +985,16 @@ class _SpecialistCard extends StatelessWidget {
                                   vertical: 2,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: orange.withValues(alpha: 0.1),
+                                  color: AppTheme.primary.withValues(
+                                    alpha: 0.1,
+                                  ),
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: Text(
                                   t,
                                   style: const TextStyle(
                                     fontSize: 10,
-                                    color: orange,
+                                    color: AppTheme.primary,
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
@@ -1141,13 +1012,17 @@ class _SpecialistCard extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.star_rounded, size: 14, color: orange),
+                        const Icon(
+                          Icons.star_rounded,
+                          size: 14,
+                          color: AppTheme.primary,
+                        ),
                         const SizedBox(width: 2),
                         Text(
                           '${s.rating}',
                           style: const TextStyle(
                             fontSize: 13,
-                            color: orange,
+                            color: AppTheme.primary,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -1166,7 +1041,7 @@ class _SpecialistCard extends StatelessWidget {
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 14,
-                        color: dark,
+                        color: AppTheme.dark,
                       ),
                     ),
                   ],
@@ -1210,14 +1085,14 @@ class _SpecialistCard extends StatelessWidget {
                           key: const ValueKey('sel'),
                           label: 'Selected',
                           icon: Icons.check_circle_rounded,
-                          bg: orange,
+                          bg: _hex(s.avatarBg),
                           fg: Colors.white,
                         )
                       : _pill(
                           key: const ValueKey('unsel'),
                           label: 'Select',
-                          bg: orange.withValues(alpha: 0.1),
-                          fg: orange,
+                          bg: AppTheme.primary.withValues(alpha: 0.1),
+                          fg: _hex(s.avatarFg),
                         ),
                 ),
               ],
@@ -1266,20 +1141,20 @@ class _SpecialistCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: orange.withValues(alpha: 0.07),
+        color: AppTheme.primary.withValues(alpha: 0.07),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 13, color: orange),
+          Icon(icon, size: 13, color: AppTheme.primary),
           const SizedBox(width: 5),
           Flexible(
             child: Text(
               label,
               style: const TextStyle(
                 fontSize: 11,
-                color: orange,
+                color: AppTheme.primary,
                 fontWeight: FontWeight.w600,
               ),
               overflow: TextOverflow.ellipsis,
@@ -1298,10 +1173,6 @@ class MyBookingsScreen extends StatelessWidget {
   final String uid;
   const MyBookingsScreen({super.key, required this.uid});
 
-  static const Color orange = Color(0xFFF37E33);
-  static const Color bg = Color(0xFFF8F4EF);
-  static const Color dark = Color(0xFF1A1A1A);
-
   Color _statusColor(String status) {
     switch (status) {
       case 'confirmed':
@@ -1309,7 +1180,7 @@ class MyBookingsScreen extends StatelessWidget {
       case 'cancelled':
         return Colors.red;
       default:
-        return orange;
+        return AppTheme.primary;
     }
   }
 
@@ -1342,18 +1213,21 @@ class MyBookingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: bg,
+      backgroundColor: AppTheme.background,
       appBar: AppBar(
-        backgroundColor: bg,
+        backgroundColor: AppTheme.background,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: dark),
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: AppTheme.dark,
+          ),
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
           'My Bookings',
           style: TextStyle(
-            color: dark,
+            color: AppTheme.dark,
             fontWeight: FontWeight.bold,
             fontSize: 18,
           ),
@@ -1368,7 +1242,7 @@ class MyBookingsScreen extends StatelessWidget {
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
             return const Center(
-              child: CircularProgressIndicator(color: orange),
+              child: CircularProgressIndicator(color: AppTheme.primary),
             );
           }
           if (snap.hasError) {
@@ -1398,13 +1272,13 @@ class MyBookingsScreen extends StatelessWidget {
                     width: 90,
                     height: 90,
                     decoration: BoxDecoration(
-                      color: orange.withValues(alpha: 0.08),
+                      color: AppTheme.primary.withValues(alpha: 0.08),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
                       Icons.calendar_today_rounded,
                       size: 40,
-                      color: orange.withValues(alpha: 0.5),
+                      color: AppTheme.primary.withValues(alpha: 0.5),
                     ),
                   ),
                   const SizedBox(height: 18),
@@ -1413,7 +1287,7 @@ class MyBookingsScreen extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 17,
                       fontWeight: FontWeight.bold,
-                      color: dark,
+                      color: AppTheme.dark,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -1472,12 +1346,12 @@ class MyBookingsScreen extends StatelessWidget {
                               width: 44,
                               height: 44,
                               decoration: BoxDecoration(
-                                color: orange.withValues(alpha: 0.10),
+                                color: AppTheme.primary.withValues(alpha: 0.10),
                                 borderRadius: BorderRadius.circular(13),
                               ),
                               child: Icon(
                                 _typeIcon(type),
-                                color: orange,
+                                color: AppTheme.primary,
                                 size: 20,
                               ),
                             ),
@@ -1492,7 +1366,7 @@ class MyBookingsScreen extends StatelessWidget {
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 14,
-                                      color: dark,
+                                      color: AppTheme.dark,
                                     ),
                                   ),
                                   const SizedBox(height: 2),
@@ -1590,7 +1464,7 @@ class MyBookingsScreen extends StatelessWidget {
                               style: const TextStyle(
                                 fontWeight: FontWeight.w800,
                                 fontSize: 14,
-                                color: dark,
+                                color: AppTheme.dark,
                               ),
                             ),
                             const SizedBox(width: 6),
@@ -1617,14 +1491,94 @@ class MyBookingsScreen extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 //  BOOKING DETAIL SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
-class _BookingDetailScreen extends StatelessWidget {
+class _BookingDetailScreen extends StatefulWidget {
   final String docId;
   final Map<String, dynamic> data;
   const _BookingDetailScreen({required this.docId, required this.data});
+  @override
+  State<_BookingDetailScreen> createState() => _BookingDetailScreenState();
+}
 
-  static const Color orange = Color(0xFFF37E33);
-  static const Color bg = Color(0xFFF8F4EF);
-  static const Color dark = Color(0xFF1A1A1A);
+class _BookingDetailScreenState extends State<_BookingDetailScreen> {
+  bool _cancelling = false;
+
+  String get docId => widget.docId;
+  Map<String, dynamic> get data => widget.data;
+
+  Future<void> _cancelBooking() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          'Cancel Booking?',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 17,
+            color: AppTheme.dark,
+          ),
+        ),
+        content: const Text(
+          'Are you sure you want to cancel this booking?',
+          style: TextStyle(fontSize: 14, color: Colors.black54),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text(
+              'Keep it',
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                color: AppTheme.muted,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade600,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              elevation: 0,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(
+              'Yes, Cancel',
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _cancelling = true);
+    await FirebaseFirestore.instance.collection('bookings').doc(docId).update({
+      'status': 'cancelled',
+    });
+    if (!mounted) return;
+    setState(() => _cancelling = false);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text(
+          'Booking cancelled.',
+          style: TextStyle(fontFamily: 'Poppins'),
+        ),
+        backgroundColor: Colors.red.shade600,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+
+    Navigator.pop(context); // go back to My Bookings
+  }
 
   Color _statusColor(String s) {
     switch (s) {
@@ -1633,7 +1587,7 @@ class _BookingDetailScreen extends StatelessWidget {
       case 'cancelled':
         return Colors.red;
       default:
-        return orange;
+        return AppTheme.primary;
     }
   }
 
@@ -1683,22 +1637,25 @@ class _BookingDetailScreen extends StatelessWidget {
     final typeIcon = type == 'nutritionist'
         ? Icons.restaurant_menu_rounded
         : Icons.fitness_center_rounded;
-
+    final canCancel = status == 'pending';
     final statusColor = _statusColor(status);
 
     return Scaffold(
-      backgroundColor: bg,
+      backgroundColor: AppTheme.background,
       appBar: AppBar(
-        backgroundColor: bg,
+        backgroundColor: AppTheme.background,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: dark),
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: AppTheme.dark,
+          ),
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
           'Booking Details',
           style: TextStyle(
-            color: dark,
+            color: AppTheme.dark,
             fontWeight: FontWeight.bold,
             fontSize: 18,
           ),
@@ -1770,10 +1727,10 @@ class _BookingDetailScreen extends StatelessWidget {
                   width: 48,
                   height: 48,
                   decoration: BoxDecoration(
-                    color: orange.withValues(alpha: 0.10),
+                    color: AppTheme.primary.withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: Icon(typeIcon, color: orange, size: 22),
+                  child: Icon(typeIcon, color: AppTheme.primary, size: 22),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -1785,7 +1742,7 @@ class _BookingDetailScreen extends StatelessWidget {
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 15,
-                          color: dark,
+                          color: AppTheme.dark,
                         ),
                       ),
                       const SizedBox(height: 3),
@@ -1820,7 +1777,7 @@ class _BookingDetailScreen extends StatelessWidget {
                   valueStyle: const TextStyle(
                     fontWeight: FontWeight.w800,
                     fontSize: 15,
-                    color: dark,
+                    color: AppTheme.dark,
                   ),
                 ),
               ],
@@ -1843,6 +1800,50 @@ class _BookingDetailScreen extends StatelessWidget {
 
           // ── Status steps tracker ───────────────────────────────────────────
           _section(child: _buildStatusTracker(status)),
+
+          // ── Cancel button (pending only) ───────────────────────────────────
+          if (canCancel) ...[
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: OutlinedButton.icon(
+                icon: _cancelling
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.red,
+                        ),
+                      )
+                    : const Icon(
+                        Icons.cancel_outlined,
+                        size: 18,
+                        color: Colors.red,
+                      ),
+                label: Text(
+                  _cancelling ? 'Cancelling...' : 'Cancel Booking',
+                  style: const TextStyle(
+                    fontFamily: 'Poppins',
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                    color: Colors.red,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(
+                    color: Colors.red.withValues(alpha: 0.6),
+                    width: 1.5,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                onPressed: _cancelling ? null : _cancelBooking,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1892,7 +1893,7 @@ class _BookingDetailScreen extends StatelessWidget {
             child: Container(
               height: 3,
               decoration: BoxDecoration(
-                color: i ~/ 2 < currentIdx ? orange : Colors.black12,
+                color: i ~/ 2 < currentIdx ? AppTheme.primary : Colors.black12,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -1906,7 +1907,7 @@ class _BookingDetailScreen extends StatelessWidget {
               width: 34,
               height: 34,
               decoration: BoxDecoration(
-                color: done ? orange : Colors.black12,
+                color: done ? AppTheme.primary : Colors.black12,
                 shape: BoxShape.circle,
               ),
               child: Icon(
@@ -1921,7 +1922,7 @@ class _BookingDetailScreen extends StatelessWidget {
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: done ? FontWeight.w700 : FontWeight.w400,
-                color: done ? orange : Colors.black38,
+                color: done ? AppTheme.primary : Colors.black38,
               ),
             ),
           ],
@@ -1956,7 +1957,7 @@ class _BookingDetailScreen extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 16, color: orange),
+        Icon(icon, size: 16, color: AppTheme.primary),
         const SizedBox(width: 10),
         SizedBox(
           width: 90,
@@ -1974,13 +1975,926 @@ class _BookingDetailScreen extends StatelessWidget {
                   fontFamily: mono ? 'monospace' : null,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: dark,
+                  color: AppTheme.dark,
                 ),
             overflow: TextOverflow.ellipsis,
             maxLines: 2,
           ),
         ),
       ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  CONSULTATION CHECKOUT SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
+class ConsultationCheckoutScreen extends StatefulWidget {
+  final Specialist specialist;
+  final String dateKey;
+  final DateTime selectedDate;
+  final String selectedTime;
+  final VoidCallback onBookingConfirmed;
+
+  const ConsultationCheckoutScreen({
+    super.key,
+    required this.specialist,
+    required this.dateKey,
+    required this.selectedDate,
+    required this.selectedTime,
+    required this.onBookingConfirmed,
+  });
+
+  @override
+  State<ConsultationCheckoutScreen> createState() =>
+      _ConsultationCheckoutScreenState();
+}
+
+class _ConsultationCheckoutScreenState
+    extends State<ConsultationCheckoutScreen> {
+  // Location
+  bool _locationConfirmed = false;
+  String _street = '';
+  String _city = '';
+  LatLng _pickedLatLng = const LatLng(31.9539, 35.9106);
+
+  // Payment
+  String _payMethod = 'cod'; // 'cod' | 'visa'
+
+  // Visa fields
+  final _cardNumCtrl = TextEditingController();
+  final _cardNameCtrl = TextEditingController();
+  final _expiryCtrl = TextEditingController();
+  final _cvvCtrl = TextEditingController();
+
+  bool _placing = false;
+
+  final _db = FirebaseFirestore.instance;
+  final _auth = FirebaseAuth.instance;
+
+  @override
+  void dispose() {
+    _cardNumCtrl.dispose();
+    _cardNameCtrl.dispose();
+    _expiryCtrl.dispose();
+    _cvvCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onLocationPicked(LatLng pos, String street, String city) {
+    setState(() {
+      _pickedLatLng = pos;
+      _street = street;
+      _city = city;
+      _locationConfirmed = true;
+    });
+  }
+
+  Future<void> _placeBooking() async {
+    // Validate location
+    if (!_locationConfirmed) {
+      _snack(
+        'Please confirm your location on the map.',
+        Colors.orange.shade700,
+      );
+      return;
+    }
+    // Validate visa
+    if (_payMethod == 'visa') {
+      if (_cardNumCtrl.text.replaceAll(' ', '').length < 16) {
+        _snack('Please enter a valid 16-digit card number.', Colors.red);
+        return;
+      }
+      if (_expiryCtrl.text.length < 5) {
+        _snack('Please enter a valid expiry date (MM/YY).', Colors.red);
+        return;
+      }
+      if (_cvvCtrl.text.length < 3) {
+        _snack('Please enter a valid CVV.', Colors.red);
+        return;
+      }
+    }
+
+    setState(() => _placing = true);
+
+    final uid = _auth.currentUser?.uid ?? 'guest';
+    final s = widget.specialist;
+    final slotRef = _db
+        .collection('specialists')
+        .doc(s.id)
+        .collection('availability')
+        .doc(widget.dateKey);
+    final bookingRef = _db.collection('bookings').doc();
+    final address = [_street, _city].where((e) => e.isNotEmpty).join(', ');
+
+    try {
+      await _db.runTransaction((tx) async {
+        final snap = await tx.get(slotRef);
+        if (snap.data()?[widget.selectedTime] == false) {
+          throw Exception('slot_taken');
+        }
+        tx.set(slotRef, {widget.selectedTime: false}, SetOptions(merge: true));
+        tx.set(bookingRef, {
+          'userId': uid,
+          'specialistId': s.id,
+          'specialistName': s.name,
+          'specialistType': s.type,
+          'specialty': s.specialty,
+          'date': widget.dateKey,
+          'time': widget.selectedTime,
+          'price': s.price,
+          'address': address,
+          'locationLat': _pickedLatLng.latitude,
+          'locationLng': _pickedLatLng.longitude,
+          'payMethod': _payMethod,
+          'status': 'pending',
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      });
+    } on Exception catch (e) {
+      if (!mounted) return;
+      setState(() => _placing = false);
+      final isTaken = e.toString().contains('slot_taken');
+      _snack(
+        isTaken
+            ? '⚠️ That slot was just taken — please choose another time.'
+            : 'Something went wrong. Please try again.',
+        isTaken ? AppTheme.primary : Colors.red,
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => _placing = false);
+    widget.onBookingConfirmed();
+
+    // Navigate to success screen, clearing the stack back to consultation
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _ConsultationSuccessScreen(
+          specialist: s,
+          date: DateFormat('EEE, d MMM yyyy').format(widget.selectedDate),
+          time: widget.selectedTime,
+          address: address,
+          payMethod: _payMethod,
+          price: s.price,
+          uid: uid,
+        ),
+      ),
+    );
+  }
+
+  void _snack(String msg, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg, style: const TextStyle(fontFamily: 'Poppins')),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.specialist;
+    return Scaffold(
+      backgroundColor: AppTheme.background,
+      appBar: AppBar(
+        backgroundColor: AppTheme.background,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: AppTheme.dark,
+          ),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          'Checkout',
+          style: TextStyle(
+            color: AppTheme.dark,
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
+        ),
+        centerTitle: true,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
+        children: [
+          // ── Booking summary card ─────────────────────────────────────────
+          _sectionCard(
+            title: 'Booking Summary',
+            icon: Icons.receipt_long_rounded,
+            child: Column(
+              children: [
+                _summaryRow(Icons.person_rounded, 'Specialist', s.name),
+                _summaryRow(
+                  Icons.medical_services_rounded,
+                  'Specialty',
+                  s.specialty,
+                ),
+                _summaryRow(
+                  Icons.calendar_today_rounded,
+                  'Date',
+                  DateFormat('EEE, d MMM yyyy').format(widget.selectedDate),
+                ),
+                _summaryRow(
+                  Icons.access_time_rounded,
+                  'Time',
+                  widget.selectedTime,
+                ),
+                const Divider(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Session Fee',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                        color: AppTheme.dark,
+                      ),
+                    ),
+                    Text(
+                      '\$${s.price.toStringAsFixed(0)}/hr',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                        color: AppTheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // ── Location section ─────────────────────────────────────────────
+          _sectionCard(
+            title: 'Your Location',
+            icon: Icons.location_on_rounded,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Drag the map to pin your exact location, then tap Confirm.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.black45,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ConsultMapPicker(
+                  initial: _pickedLatLng,
+                  onLocationPicked: _onLocationPicked,
+                ),
+                if (_locationConfirmed && _street.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.green.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.check_circle_rounded,
+                          color: Colors.green.shade600,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            [
+                              _street,
+                              _city,
+                            ].where((e) => e.isNotEmpty).join(', '),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.green.shade700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // ── Payment method ───────────────────────────────────────────────
+          _sectionCard(
+            title: 'Payment Method',
+            icon: Icons.payment_rounded,
+            child: Column(
+              children: [
+                _payOption(
+                  value: 'cod',
+                  icon: Icons.money_rounded,
+                  label: 'Cash on Delivery',
+                  sub: 'Pay in cash when the session begins',
+                ),
+                const SizedBox(height: 10),
+                _payOption(
+                  value: 'visa',
+                  icon: Icons.credit_card_rounded,
+                  label: 'Credit / Debit Card',
+                  sub: 'Pay securely with your card',
+                ),
+                if (_payMethod == 'visa') ...[
+                  const SizedBox(height: 16),
+                  _cardField(
+                    _cardNumCtrl,
+                    'Card Number',
+                    '1234 5678 9012 3456',
+                    Icons.credit_card_rounded,
+                    TextInputType.number,
+                    formatters: [_CardNumberFormatter()],
+                    maxLen: 19,
+                  ),
+                  const SizedBox(height: 10),
+                  _cardField(
+                    _cardNameCtrl,
+                    'Cardholder Name',
+                    'Name on card',
+                    Icons.person_outline_rounded,
+                    TextInputType.name,
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _cardField(
+                          _expiryCtrl,
+                          'Expiry',
+                          'MM/YY',
+                          Icons.calendar_month_rounded,
+                          TextInputType.number,
+                          formatters: [_ExpiryFormatter()],
+                          maxLen: 5,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _cardField(
+                          _cvvCtrl,
+                          'CVV',
+                          '•••',
+                          Icons.lock_outline_rounded,
+                          TextInputType.number,
+                          maxLen: 3,
+                          obscure: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+
+      // ── Bottom confirm bar ───────────────────────────────────────────────
+      bottomNavigationBar: Container(
+        padding: EdgeInsets.fromLTRB(
+          20,
+          16,
+          20,
+          MediaQuery.of(context).padding.bottom + 16,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 20,
+              offset: const Offset(0, -4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Total',
+                  style: TextStyle(fontSize: 12, color: Colors.black45),
+                ),
+                Text(
+                  '\$${s.price.toStringAsFixed(0)}/hr',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 20,
+                    color: AppTheme.primary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: SizedBox(
+                height: 52,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 4,
+                    shadowColor: AppTheme.primary.withValues(alpha: 0.4),
+                  ),
+                  onPressed: _placing ? null : _placeBooking,
+                  child: _placing
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2.5,
+                          ),
+                        )
+                      : const Text(
+                          'Confirm Booking',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
+                        ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Helper widgets ─────────────────────────────────────────────────────────
+
+  Widget _sectionCard({
+    required String title,
+    required IconData icon,
+    required Widget child,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, color: AppTheme.primary, size: 16),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: AppTheme.dark,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _summaryRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Icon(icon, size: 14, color: Colors.black38),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 80,
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 12, color: Colors.black45),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.dark,
+              ),
+              textAlign: TextAlign.end,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _payOption({
+    required String value,
+    required IconData icon,
+    required String label,
+    required String sub,
+  }) {
+    final sel = _payMethod == value;
+    return GestureDetector(
+      onTap: () => setState(() => _payMethod = value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: sel ? AppTheme.primary : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: sel ? AppTheme.primary : Colors.black12,
+            width: sel ? 2 : 1,
+          ),
+          boxShadow: sel
+              ? [
+                  BoxShadow(
+                    color: AppTheme.primary.withValues(alpha: 0.20),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ]
+              : [],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(9),
+              decoration: BoxDecoration(
+                color: sel
+                    ? Colors.white.withValues(alpha: 0.2)
+                    : AppTheme.primary.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                icon,
+                color: sel ? Colors.white : AppTheme.primary,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                      color: sel ? Colors.white : AppTheme.dark,
+                    ),
+                  ),
+                  Text(
+                    sub,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: sel
+                          ? Colors.white.withValues(alpha: 0.75)
+                          : Colors.black45,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (sel)
+              Container(
+                width: 20,
+                height: 20,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.check_rounded,
+                  color: AppTheme.primary,
+                  size: 14,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _cardField(
+    TextEditingController ctrl,
+    String label,
+    String hint,
+    IconData icon,
+    TextInputType type, {
+    List<TextInputFormatter>? formatters,
+    int? maxLen,
+    bool obscure = false,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: Colors.black54,
+          ),
+        ),
+        const SizedBox(height: 5),
+        TextField(
+          controller: ctrl,
+          keyboardType: type,
+          obscureText: obscure,
+          inputFormatters: formatters,
+          maxLength: maxLen,
+          style: const TextStyle(fontSize: 14, color: AppTheme.dark),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: const TextStyle(color: Colors.black38, fontSize: 13),
+            prefixIcon: Icon(icon, color: AppTheme.primary, size: 18),
+            filled: true,
+            fillColor: AppTheme.background,
+            counterText: '',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: AppTheme.primary, width: 1.5),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Color(0xFFE8DDD4)),
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              vertical: 12,
+              horizontal: 14,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  CONSULTATION SUCCESS SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
+class _ConsultationSuccessScreen extends StatelessWidget {
+  final Specialist specialist;
+  final String date;
+  final String time;
+  final String address;
+  final String payMethod;
+  final double price;
+  final String uid;
+
+  const _ConsultationSuccessScreen({
+    required this.specialist,
+    required this.date,
+    required this.time,
+    required this.address,
+    required this.payMethod,
+    required this.price,
+    required this.uid,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppTheme.background,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Green checkmark
+              Container(
+                width: 110,
+                height: 110,
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.green.shade200, width: 2),
+                ),
+                child: Icon(
+                  Icons.check_circle_rounded,
+                  color: Colors.green.shade500,
+                  size: 64,
+                ),
+              ),
+              const SizedBox(height: 28),
+              const Text(
+                'Booking Submitted! 🎉',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 24,
+                  color: AppTheme.dark,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Your session with ${specialist.name} on $date at $time is pending confirmation.',
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: Colors.black54,
+                  height: 1.5,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+
+              // Detail pills
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 12,
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    _row(Icons.location_on_rounded, 'Location', address),
+                    const SizedBox(height: 10),
+                    _row(
+                      payMethod == 'visa'
+                          ? Icons.credit_card_rounded
+                          : Icons.money_rounded,
+                      'Payment',
+                      payMethod == 'visa' ? 'Card payment' : 'Cash on delivery',
+                    ),
+                    const SizedBox(height: 10),
+                    _row(
+                      Icons.attach_money_rounded,
+                      'Session Fee',
+                      '\$${price.toStringAsFixed(0)}/hr',
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 32),
+
+              // View My Bookings
+              SizedBox(
+                width: double.infinity,
+                height: 54,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 4,
+                    shadowColor: AppTheme.primary.withValues(alpha: 0.4),
+                  ),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => MyBookingsScreen(uid: uid),
+                      ),
+                    );
+                  },
+                  child: const Text(
+                    'View My Bookings',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Back to Consultation
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text(
+                  'Back to Consultation',
+                  style: TextStyle(color: Colors.black45, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _row(IconData icon, String label, String value) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Icon(icon, size: 16, color: AppTheme.primary),
+      const SizedBox(width: 10),
+      SizedBox(
+        width: 80,
+        child: Text(
+          label,
+          style: const TextStyle(fontSize: 12, color: Colors.black45),
+        ),
+      ),
+      Expanded(
+        child: Text(
+          value,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: AppTheme.dark,
+          ),
+          overflow: TextOverflow.ellipsis,
+          maxLines: 2,
+        ),
+      ),
+    ],
+  );
+}
+
+// ── Card number auto-format ───────────────────────────────────────────────────
+class _CardNumberFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue old,
+    TextEditingValue next,
+  ) {
+    final digits = next.text.replaceAll(' ', '');
+    final buf = StringBuffer();
+    for (int i = 0; i < digits.length; i++) {
+      if (i > 0 && i % 4 == 0) buf.write(' ');
+      buf.write(digits[i]);
+    }
+    final s = buf.toString();
+    return next.copyWith(
+      text: s,
+      selection: TextSelection.collapsed(offset: s.length),
+    );
+  }
+}
+
+// ── Expiry auto-format MM/YY ──────────────────────────────────────────────────
+class _ExpiryFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue old,
+    TextEditingValue next,
+  ) {
+    final digits = next.text.replaceAll('/', '');
+    final buf = StringBuffer();
+    for (int i = 0; i < digits.length && i < 4; i++) {
+      if (i == 2) buf.write('/');
+      buf.write(digits[i]);
+    }
+    final s = buf.toString();
+    return next.copyWith(
+      text: s,
+      selection: TextSelection.collapsed(offset: s.length),
     );
   }
 }

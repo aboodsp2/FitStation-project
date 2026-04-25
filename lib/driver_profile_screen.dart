@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'app_theme.dart';
 import 'driver_models.dart';
 import 'auth_screen.dart';
 
 class DriverProfileScreen extends StatelessWidget {
-  final DriverProfile? driverProfile;
-
-  const DriverProfileScreen({super.key, this.driverProfile});
+  const DriverProfileScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
@@ -18,83 +19,88 @@ class DriverProfileScreen extends StatelessWidget {
         elevation: 0,
         title: Text('Profile', style: AppTheme.subheading.copyWith(fontSize: 18)),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            // Profile Header
-            _buildProfileHeader(),
-            const SizedBox(height: 24),
+      body: user == null
+          ? const Center(child: Text('Not logged in'))
+          : StreamBuilder<DocumentSnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('drivers')
+                  .doc(user.uid)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                final driverProfile = snapshot.hasData && snapshot.data!.exists
+                    ? DriverProfile.fromFirestore(snapshot.data!)
+                    : null;
 
-            // Stats Cards
-            _buildStatsCards(),
-            const SizedBox(height: 24),
-
-            // Menu Items
-            _buildMenuSection(context, 'Account', [
-              _MenuItem(
-                icon: Icons.person_outline,
-                title: 'Personal Information',
-                subtitle: driverProfile?.email ?? '',
-                onTap: () {},
-              ),
-              _MenuItem(
-                icon: Icons.two_wheeler_outlined,
-                title: 'Vehicle Details',
-                subtitle: '${driverProfile?.vehicleType} • ${driverProfile?.vehicleNumber}',
-                onTap: () {},
-              ),
-            ]),
-
-            const SizedBox(height: 16),
-
-            _buildMenuSection(context, 'App', [
-              _MenuItem(
-                icon: Icons.info_outline,
-                title: 'About',
-                onTap: () {},
-              ),
-            ]),
-
-            const SizedBox(height: 24),
-
-            // Sign Out Button
-            SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: ElevatedButton(
-                onPressed: () => _signOut(context),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red.withOpacity(0.1),
-                  foregroundColor: Colors.red,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  elevation: 0,
-                ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.logout, size: 20),
-                    SizedBox(width: 8),
-                    Text(
-                      'Sign Out',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    children: [
+                      _buildProfileHeader(driverProfile),
+                      const SizedBox(height: 24),
+                      _buildStatsCards(driverProfile),
+                      const SizedBox(height: 24),
+                      _buildMenuSection(context, 'Account', [
+                        _MenuItem(
+                          icon: Icons.person_outline,
+                          title: 'Personal Information',
+                          subtitle: driverProfile?.email ?? '',
+                          onTap: () {},
+                        ),
+                        _MenuItem(
+                          icon: Icons.two_wheeler_outlined,
+                          title: 'Vehicle Details',
+                          subtitle:
+                              '${driverProfile?.vehicleType ?? ''} • ${driverProfile?.vehicleNumber ?? ''}',
+                          onTap: () {},
+                        ),
+                      ]),
+                      const SizedBox(height: 16),
+                      _buildMenuSection(context, 'App', [
+                        _MenuItem(
+                          icon: Icons.info_outline,
+                          title: 'About',
+                          onTap: () {},
+                        ),
+                      ]),
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed: () => _signOut(context),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red.withValues(alpha:0.1),
+                            foregroundColor: Colors.red,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.logout, size: 20),
+                              SizedBox(width: 8),
+                              Text(
+                                'Sign Out',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
+                    ],
+                  ),
+                );
+              },
             ),
-          ],
-        ),
-      ),
     );
   }
 
-  Widget _buildProfileHeader() {
+  Widget _buildProfileHeader(DriverProfile? driverProfile) {
     final driverName = (driverProfile?.name ?? '').trim();
     final driverInitial = driverName.isNotEmpty
         ? driverName.substring(0, 1).toUpperCase()
@@ -113,7 +119,7 @@ class DriverProfileScreen extends StatelessWidget {
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: AppTheme.primary.withOpacity(0.3),
+                  color: AppTheme.primary.withValues(alpha:0.3),
                   blurRadius: 16,
                   offset: const Offset(0, 8),
                 ),
@@ -150,7 +156,7 @@ class DriverProfileScreen extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: Colors.orange.withOpacity(0.1),
+              color: Colors.orange.withValues(alpha:0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
@@ -175,7 +181,7 @@ class DriverProfileScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildStatsCards() {
+  Widget _buildStatsCards(DriverProfile? driverProfile) {
     return Row(
       children: [
         Expanded(
@@ -187,7 +193,7 @@ class DriverProfileScreen extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.1),
+                    color: Colors.blue.withValues(alpha:0.1),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Icon(
@@ -226,7 +232,7 @@ class DriverProfileScreen extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.green.withOpacity(0.1),
+                    color: Colors.green.withValues(alpha:0.1),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Icon(
@@ -288,7 +294,7 @@ class DriverProfileScreen extends StatelessWidget {
                           Container(
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
-                              color: AppTheme.accent.withOpacity(0.1),
+                              color: AppTheme.accent.withValues(alpha:0.1),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Icon(

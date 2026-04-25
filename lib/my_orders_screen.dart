@@ -5,16 +5,7 @@ import 'app_theme.dart';
 import 'supplement_store_screen.dart';
 
 // ── Order Status ──────────────────────────────────────────────────────────────
-enum OrderStatus {
-  processing,
-  confirmed,
-  assigned,
-  pickedUp,
-  inTransit,
-  shipped,
-  delivered,
-  cancelled,
-}
+enum OrderStatus { processing, confirmed, shipped, delivered, cancelled }
 
 // ── Order Line Item ───────────────────────────────────────────────────────────
 class OrderLineItem {
@@ -33,7 +24,6 @@ class OrderLineItem {
 // ── Order ─────────────────────────────────────────────────────────────────────
 class Order {
   final String id;
-  final String firestoreId;
   final DateTime date;
   final double total;
   final List<OrderLineItem> items;
@@ -43,12 +33,9 @@ class Order {
   final String phone;
   final String? driverId;
   final String? driverName;
-  final double? orderRating;
-  final double? driverRating;
 
   const Order({
     required this.id,
-    this.firestoreId = '',
     required this.date,
     required this.total,
     required this.items,
@@ -58,22 +45,14 @@ class Order {
     this.phone = '',
     this.driverId,
     this.driverName,
-    this.orderRating,
-    this.driverRating,
   });
+
+  bool get hasDriver => driverId != null && driverId!.isNotEmpty;
 
   static OrderStatus _parseStatus(String s) {
     switch (s) {
       case 'confirmed':
         return OrderStatus.confirmed;
-      case 'assigned':
-        return OrderStatus.assigned;
-      case 'pickedUp':
-      case 'picked_up':
-        return OrderStatus.pickedUp;
-      case 'inTransit':
-      case 'in_transit':
-        return OrderStatus.inTransit;
       case 'shipped':
         return OrderStatus.shipped;
       case 'delivered':
@@ -97,9 +76,6 @@ class Order {
       phone: data['phone'] as String? ?? '',
       driverId: data['driverId'] as String?,
       driverName: data['driverName'] as String?,
-      orderRating: (data['orderRating'] as num?)?.toDouble(),
-      driverRating: (data['driverRating'] as num?)?.toDouble(),
-      firestoreId: data['firestoreId'] as String? ?? data['id'] as String? ?? '',
       items: rawItems.map((e) {
         final m = e as Map<String, dynamic>;
         return OrderLineItem(
@@ -167,63 +143,6 @@ class MyOrdersScreen extends StatelessWidget {
                       'My Orders',
                       style: AppTheme.heading.copyWith(fontSize: 24),
                     ),
-                  ),
-                  // Rating icon — tapping opens rate-an-order bottom sheet
-                  StreamBuilder<QuerySnapshot>(
-                    stream: FirebaseFirestore.instance
-                        .collection('orders')
-                        .doc(user.uid)
-                        .collection('userOrders')
-                        .orderBy('date', descending: true)
-                        .snapshots(),
-                    builder: (context, snapshot) {
-                      final pendingCount = (snapshot.data?.docs ?? []).where((doc) {
-                        final data = doc.data() as Map<String, dynamic>;
-                        if ((data['status'] as String? ?? '') != 'delivered') {
-                          return false;
-                        }
-                        final hasDriver =
-                            (data['driverId'] as String?)?.isNotEmpty ?? false;
-                        final orderRated = data['orderRating'] != null;
-                        final driverRated =
-                            !hasDriver || data['driverRating'] != null;
-                        return !orderRated || !driverRated;
-                      }).length;
-
-                      return GestureDetector(
-                        onTap: () => _showRatePicker(context, user.uid),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 9,
-                          ),
-                          margin: const EdgeInsets.only(right: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.amber.withValues(alpha: 0.14),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.star_rounded,
-                                color: Colors.amber,
-                                size: 18,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                pendingCount > 0 ? 'Rate ($pendingCount)' : 'Rate',
-                                style: const TextStyle(
-                                  fontFamily: 'Poppins',
-                                  color: Colors.amber,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
                   ),
                   GestureDetector(
                     onTap: () => Navigator.push(
@@ -305,11 +224,11 @@ class MyOrdersScreen extends StatelessWidget {
                               .startsWith('Consultation:'),
                         );
                       })
-                      .map((d) {
-                        final data = d.data() as Map<String, dynamic>;
-                        data['firestoreId'] = d.id;
-                        return Order.fromFirestore(data);
-                      })
+                      .map(
+                        (d) => Order.fromFirestore(
+                          d.data() as Map<String, dynamic>,
+                        ),
+                      )
                       .toList();
 
                   if (orders.isEmpty) return _buildEmpty(context);
@@ -325,17 +244,6 @@ class MyOrdersScreen extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-
-  void _showRatePicker(BuildContext context, String userId) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppTheme.background,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (_) => _RateOrderPicker(userId: userId),
     );
   }
 
@@ -406,38 +314,12 @@ class _OrderCard extends StatelessWidget {
   final Order order;
   const _OrderCard({required this.order});
 
-  bool get _canRateOrder => order.status == OrderStatus.delivered;
-  bool get _hasOrderRating => order.orderRating != null;
-  bool get _hasDriverRating => order.driverRating != null;
-  bool get _hasDriver => (order.driverId ?? '').isNotEmpty;
-
-  void _showRatingSheet(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppTheme.background,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (_) => _RateOrderSheet(userId: user.uid, order: order),
-    );
-  }
-
   Color _statusColor(OrderStatus s) {
     switch (s) {
       case OrderStatus.processing:
         return Colors.orange;
       case OrderStatus.confirmed:
         return Colors.blue;
-      case OrderStatus.assigned:
-        return Colors.indigo;
-      case OrderStatus.pickedUp:
-        return Colors.deepOrange;
-      case OrderStatus.inTransit:
-        return AppTheme.accent;
       case OrderStatus.shipped:
         return Colors.purple;
       case OrderStatus.delivered:
@@ -453,12 +335,6 @@ class _OrderCard extends StatelessWidget {
         return Icons.hourglass_top_rounded;
       case OrderStatus.confirmed:
         return Icons.check_circle_outline_rounded;
-      case OrderStatus.assigned:
-        return Icons.person_rounded;
-      case OrderStatus.pickedUp:
-        return Icons.shopping_bag_outlined;
-      case OrderStatus.inTransit:
-        return Icons.local_shipping_outlined;
       case OrderStatus.shipped:
         return Icons.local_shipping_outlined;
       case OrderStatus.delivered:
@@ -604,20 +480,6 @@ class _OrderCard extends StatelessWidget {
             Divider(height: 1, color: AppTheme.divider),
 
             // ── Bottom ──────────────────────────────────────────────────────
-            if (_hasOrderRating || _hasDriverRating)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                child: Row(
-                  children: [
-                    if (_hasOrderRating)
-                      _RatingChip(label: 'Order', rating: order.orderRating!),
-                    if (_hasOrderRating && _hasDriverRating)
-                      const SizedBox(width: 8),
-                    if (_hasDriverRating)
-                      _RatingChip(label: 'Driver', rating: order.driverRating!),
-                  ],
-                ),
-              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 10, 12, 12),
               child: Row(
@@ -648,36 +510,6 @@ class _OrderCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 4),
-                  if (_canRateOrder)
-                    GestureDetector(
-                      onTap: () => _showRatingSheet(context),
-                      child: Container(
-                        margin: const EdgeInsets.only(right: 8),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: (_hasOrderRating && (!_hasDriver || _hasDriverRating))
-                              ? Colors.green.withValues(alpha: 0.12)
-                              : Colors.amber.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          (_hasOrderRating && (!_hasDriver || _hasDriverRating))
-                              ? 'Rated'
-                              : 'Rate',
-                          style: TextStyle(
-                            fontFamily: 'Poppins',
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: (_hasOrderRating && (!_hasDriver || _hasDriverRating))
-                                ? Colors.green
-                                : Colors.amber.shade800,
-                          ),
-                        ),
-                      ),
-                    ),
                   Icon(
                     Icons.chevron_right_rounded,
                     color: AppTheme.muted,
@@ -694,444 +526,6 @@ class _OrderCard extends StatelessWidget {
 }
 
 // ── Status Badge ──────────────────────────────────────────────────────────────
-class _RatingChip extends StatelessWidget {
-  final String label;
-  final double rating;
-
-  const _RatingChip({required this.label, required this.rating});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.amber.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.star_rounded, size: 14, color: Colors.amber),
-          const SizedBox(width: 4),
-          Text(
-            '$label ${rating.toStringAsFixed(1)}',
-            style: const TextStyle(
-              fontFamily: 'Poppins',
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: Colors.amber,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _RateOrderPicker extends StatelessWidget {
-  final String userId;
-
-  const _RateOrderPicker({required this.userId});
-
-  bool _needsRating(Map<String, dynamic> data) {
-    if ((data['status'] as String? ?? '') != 'delivered') return false;
-    final hasDriver = (data['driverId'] as String?)?.isNotEmpty ?? false;
-    final orderRated = data['orderRating'] != null;
-    final driverRated = !hasDriver || data['driverRating'] != null;
-    return !orderRated || !driverRated;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
-        child: StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('orders')
-              .doc(userId)
-              .collection('userOrders')
-              .orderBy('date', descending: true)
-              .snapshots(),
-          builder: (context, snapshot) {
-            final docs = (snapshot.data?.docs ?? [])
-                .where((doc) => _needsRating(doc.data() as Map<String, dynamic>))
-                .toList();
-
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Rate your orders',
-                  style: AppTheme.subheading.copyWith(fontSize: 18),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Choose a delivered order to rate the order and the driver.',
-                  style: AppTheme.body.copyWith(fontSize: 13),
-                ),
-                const SizedBox(height: 16),
-                if (snapshot.connectionState == ConnectionState.waiting)
-                  const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: CircularProgressIndicator(color: AppTheme.primary),
-                    ),
-                  )
-                else if (docs.isEmpty)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(18),
-                    decoration: AppTheme.card(radius: 16),
-                    child: Text(
-                      'No delivered orders waiting for rating.',
-                      style: AppTheme.body.copyWith(fontSize: 13),
-                    ),
-                  )
-                else
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 320),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        children: docs.map((doc) {
-                          final data = doc.data() as Map<String, dynamic>;
-                          data['firestoreId'] = doc.id;
-                          final order = Order.fromFirestore(data);
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: GestureDetector(
-                              onTap: () {
-                                Navigator.pop(context);
-                                showModalBottomSheet(
-                                  context: context,
-                                  isScrollControlled: true,
-                                  backgroundColor: AppTheme.background,
-                                  shape: const RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.vertical(
-                                      top: Radius.circular(24),
-                                    ),
-                                  ),
-                                  builder: (_) => _RateOrderSheet(
-                                    userId: userId,
-                                    order: order,
-                                  ),
-                                );
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(14),
-                                decoration: AppTheme.card(radius: 16),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 42,
-                                      height: 42,
-                                      decoration: BoxDecoration(
-                                        color: Colors.amber.withValues(alpha: 0.12),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: const Icon(
-                                        Icons.star_rounded,
-                                        color: Colors.amber,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'Order #${order.id}',
-                                            style: AppTheme.subheading.copyWith(fontSize: 14),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            order.items.isNotEmpty
-                                                ? order.items.first.name
-                                                : 'Delivered order',
-                                            style: AppTheme.body.copyWith(fontSize: 12),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    const Icon(
-                                      Icons.chevron_right_rounded,
-                                      color: AppTheme.muted,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  ),
-              ],
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-class _RateOrderSheet extends StatefulWidget {
-  final String userId;
-  final Order order;
-
-  const _RateOrderSheet({required this.userId, required this.order});
-
-  @override
-  State<_RateOrderSheet> createState() => _RateOrderSheetState();
-}
-
-class _RateOrderSheetState extends State<_RateOrderSheet> {
-  int? _orderRating;
-  int? _driverRating;
-  bool _saving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _orderRating = widget.order.orderRating?.round();
-    _driverRating = widget.order.driverRating?.round();
-  }
-
-  bool get _hasDriver => (widget.order.driverId ?? '').isNotEmpty;
-
-  Future<void> _submit() async {
-    if (_orderRating == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please rate the order first.')),
-      );
-      return;
-    }
-    if (_hasDriver && _driverRating == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please rate the driver too.')),
-      );
-      return;
-    }
-
-    setState(() => _saving = true);
-    try {
-      await _OrderRatingService.submit(
-        userId: widget.userId,
-        order: widget.order,
-        orderRating: _orderRating!,
-        driverRating: _hasDriver ? _driverRating : null,
-      );
-      if (!mounted) return;
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Rating submitted successfully.'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not save rating: $e')),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _saving = false);
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(20, 20, 20, 24 + bottomInset),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Rate Order #${widget.order.id}',
-              style: AppTheme.subheading.copyWith(fontSize: 18),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Your order rating is saved with the order. Driver rating updates the driver score instantly.',
-              style: AppTheme.body.copyWith(fontSize: 13),
-            ),
-            const SizedBox(height: 18),
-            Text(
-              'Order experience',
-              style: AppTheme.subheading.copyWith(fontSize: 14),
-            ),
-            const SizedBox(height: 10),
-            _StarSelector(
-              value: _orderRating ?? 0,
-              onChanged: widget.order.orderRating == null
-                  ? (value) => setState(() => _orderRating = value)
-                  : null,
-            ),
-            if (widget.order.orderRating != null) ...[
-              const SizedBox(height: 6),
-              Text(
-                'This order was already rated.',
-                style: AppTheme.body.copyWith(fontSize: 12),
-              ),
-            ],
-            if (_hasDriver) ...[
-              const SizedBox(height: 18),
-              Text(
-                widget.order.driverName?.trim().isNotEmpty == true
-                    ? 'Driver: ${widget.order.driverName}'
-                    : 'Driver',
-                style: AppTheme.subheading.copyWith(fontSize: 14),
-              ),
-              const SizedBox(height: 10),
-              _StarSelector(
-                value: _driverRating ?? 0,
-                onChanged: widget.order.driverRating == null
-                    ? (value) => setState(() => _driverRating = value)
-                    : null,
-              ),
-              if (widget.order.driverRating != null) ...[
-                const SizedBox(height: 6),
-                Text(
-                  'This driver was already rated for this order.',
-                  style: AppTheme.body.copyWith(fontSize: 12),
-                ),
-              ],
-            ],
-            const SizedBox(height: 22),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _saving ? null : _submit,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primary,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-                child: _saving
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Text(
-                        'Submit Rating',
-                        style: TextStyle(
-                          fontFamily: 'Poppins',
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StarSelector extends StatelessWidget {
-  final int value;
-  final ValueChanged<int>? onChanged;
-
-  const _StarSelector({required this.value, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: List.generate(5, (index) {
-        final starValue = index + 1;
-        return GestureDetector(
-          onTap: onChanged == null ? null : () => onChanged!(starValue),
-          child: Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: Icon(
-              starValue <= value ? Icons.star_rounded : Icons.star_border_rounded,
-              color: Colors.amber,
-              size: 32,
-            ),
-          ),
-        );
-      }),
-    );
-  }
-}
-
-class _OrderRatingService {
-  static Future<void> submit({
-    required String userId,
-    required Order order,
-    required int orderRating,
-    required int? driverRating,
-  }) async {
-    final db = FirebaseFirestore.instance;
-    final userOrderRef = db
-        .collection('orders')
-        .doc(userId)
-        .collection('userOrders')
-        .doc(order.firestoreId.isNotEmpty ? order.firestoreId : order.id);
-    final deliveryOrderRef = db.collection('deliveryOrders').doc(order.id);
-    final hasDriver = (order.driverId ?? '').isNotEmpty;
-
-    await db.runTransaction((transaction) async {
-      final userOrderSnap = await transaction.get(userOrderRef);
-      if (!userOrderSnap.exists) {
-        throw Exception('Order was not found.');
-      }
-
-      final currentData = userOrderSnap.data() as Map<String, dynamic>;
-      final updates = <String, dynamic>{};
-
-      if (currentData['orderRating'] == null) {
-        updates['orderRating'] = orderRating.toDouble();
-      }
-
-      if (hasDriver && driverRating != null && currentData['driverRating'] == null) {
-        updates['driverRating'] = driverRating.toDouble();
-
-        final driverRef = db.collection('drivers').doc(order.driverId!);
-        final driverSnap = await transaction.get(driverRef);
-        if (driverSnap.exists) {
-          final driverData = driverSnap.data() as Map<String, dynamic>;
-          final ratingCount = (driverData['ratingCount'] as num?)?.toInt() ?? 0;
-          final totalPoints =
-              (driverData['totalRatingPoints'] as num?)?.toDouble() ?? 0.0;
-          final newCount = ratingCount + 1;
-          final newTotal = totalPoints + driverRating;
-
-          transaction.update(driverRef, {
-            'ratingCount': newCount,
-            'totalRatingPoints': newTotal,
-            'rating': newTotal / newCount,
-          });
-        }
-      }
-
-      if (updates.isEmpty) {
-        throw Exception('This order has already been rated.');
-      }
-
-      updates['ratedAt'] = FieldValue.serverTimestamp();
-      transaction.update(userOrderRef, updates);
-      transaction.set(deliveryOrderRef, updates, SetOptions(merge: true));
-    });
-  }
-}
-
 class _StatusBadge extends StatelessWidget {
   final OrderStatus status;
   const _StatusBadge({required this.status});
@@ -1142,12 +536,6 @@ class _StatusBadge extends StatelessWidget {
         return 'Processing';
       case OrderStatus.confirmed:
         return 'Confirmed';
-      case OrderStatus.assigned:
-        return 'Assigned';
-      case OrderStatus.pickedUp:
-        return 'Picked Up';
-      case OrderStatus.inTransit:
-        return 'In Transit';
       case OrderStatus.shipped:
         return 'Shipped';
       case OrderStatus.delivered:
@@ -1163,12 +551,6 @@ class _StatusBadge extends StatelessWidget {
         return Colors.orange;
       case OrderStatus.confirmed:
         return Colors.blue;
-      case OrderStatus.assigned:
-        return Colors.indigo;
-      case OrderStatus.pickedUp:
-        return Colors.deepOrange;
-      case OrderStatus.inTransit:
-        return AppTheme.accent;
       case OrderStatus.shipped:
         return Colors.purple;
       case OrderStatus.delivered:
@@ -1202,24 +584,116 @@ class _StatusBadge extends StatelessWidget {
 }
 
 // ── Order Detail Screen ───────────────────────────────────────────────────────
-class _OrderDetailScreen extends StatelessWidget {
+class _OrderDetailScreen extends StatefulWidget {
   final Order order;
   const _OrderDetailScreen({required this.order});
 
+  @override
+  State<_OrderDetailScreen> createState() => _OrderDetailScreenState();
+}
+
+class _OrderDetailScreenState extends State<_OrderDetailScreen> {
+  Order get order => widget.order;
+
+  Map<String, int> _ratings = {};
+  int _driverRating = 0;
+  bool _alreadyRated = false;
+  bool _isSubmitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (order.status == OrderStatus.delivered) _loadExistingRatings();
+  }
+
+  Future<void> _loadExistingRatings() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('orders')
+          .doc(user.uid)
+          .collection('userOrders')
+          .doc(order.id)
+          .get();
+      final data = doc.data();
+      if (data == null) return;
+      final raw = data['itemRatings'] as Map<String, dynamic>?;
+      if (raw != null && raw.isNotEmpty) {
+        setState(() {
+          _ratings = raw.map((k, v) => MapEntry(k, (v as num).toInt()));
+          _driverRating = (data['driverRating'] as num?)?.toInt() ?? 0;
+          _alreadyRated = true;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _submitRatings() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    setState(() => _isSubmitting = true);
+    try {
+      final db = FirebaseFirestore.instance;
+      final orderRef = db
+          .collection('orders')
+          .doc(user.uid)
+          .collection('userOrders')
+          .doc(order.id);
+
+      final updates = <String, dynamic>{'itemRatings': _ratings};
+      if (order.hasDriver && _driverRating > 0) {
+        updates['driverRating'] = _driverRating;
+      }
+
+      await orderRef.update(updates);
+
+      // Update driver aggregate rating in a transaction
+      if (order.hasDriver && _driverRating > 0) {
+        final driverRef = db.collection('drivers').doc(order.driverId);
+        await db.runTransaction((tx) async {
+          final snap = await tx.get(driverRef);
+          if (!snap.exists) return;
+          final d = snap.data()!;
+          final count = (d['ratingCount'] as num?)?.toInt() ?? 0;
+          final total = (d['totalRatingPoints'] as num?)?.toDouble() ?? 0.0;
+          final newCount = count + 1;
+          final newTotal = total + _driverRating;
+          tx.update(driverRef, {
+            'ratingCount': newCount,
+            'totalRatingPoints': newTotal,
+            'rating': newTotal / newCount,
+          });
+        });
+      }
+
+      setState(() => _alreadyRated = true);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Thanks for your rating!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to submit: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
   String _formatDate(DateTime d) {
     const m = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
     ];
     return '${m[d.month - 1]} ${d.day}, ${d.year}  '
         '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
@@ -1231,12 +705,6 @@ class _OrderDetailScreen extends StatelessWidget {
         return 'Processing';
       case OrderStatus.confirmed:
         return 'Confirmed';
-      case OrderStatus.assigned:
-        return 'Assigned';
-      case OrderStatus.pickedUp:
-        return 'Picked Up';
-      case OrderStatus.inTransit:
-        return 'In Transit';
       case OrderStatus.shipped:
         return 'Shipped';
       case OrderStatus.delivered:
@@ -1252,12 +720,6 @@ class _OrderDetailScreen extends StatelessWidget {
         return Icons.hourglass_top_rounded;
       case OrderStatus.confirmed:
         return Icons.check_rounded;
-      case OrderStatus.assigned:
-        return Icons.person_rounded;
-      case OrderStatus.pickedUp:
-        return Icons.shopping_bag_outlined;
-      case OrderStatus.inTransit:
-        return Icons.local_shipping_outlined;
       case OrderStatus.shipped:
         return Icons.local_shipping_outlined;
       case OrderStatus.delivered:
@@ -1275,10 +737,7 @@ class _OrderDetailScreen extends StatelessWidget {
         backgroundColor: AppTheme.background,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: AppTheme.dark,
-          ),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: AppTheme.dark),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
@@ -1291,11 +750,9 @@ class _OrderDetailScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Status tracker ───────────────────────────────────────────────
             _buildTracker(),
             const SizedBox(height: 24),
 
-            // ── Items ────────────────────────────────────────────────────────
             Text('Items', style: AppTheme.subheading.copyWith(fontSize: 15)),
             const SizedBox(height: 10),
             Container(
@@ -1306,7 +763,6 @@ class _OrderDetailScreen extends StatelessWidget {
             ),
             const SizedBox(height: 20),
 
-            // ── Summary ──────────────────────────────────────────────────────
             Text('Summary', style: AppTheme.subheading.copyWith(fontSize: 15)),
             const SizedBox(height: 10),
             Container(
@@ -1314,11 +770,7 @@ class _OrderDetailScreen extends StatelessWidget {
               decoration: AppTheme.card(radius: 16),
               child: Column(
                 children: [
-                  _infoRow(
-                    Icons.location_on_outlined,
-                    'Delivery address',
-                    order.address,
-                  ),
+                  _infoRow(Icons.location_on_outlined, 'Delivery address', order.address),
                   const SizedBox(height: 12),
                   if (order.phone.isNotEmpty) ...[
                     _infoRow(Icons.phone_outlined, 'Phone', order.phone),
@@ -1329,24 +781,15 @@ class _OrderDetailScreen extends StatelessWidget {
                         ? Icons.credit_card_rounded
                         : Icons.payments_outlined,
                     'Payment',
-                    order.payMethod == 'visa'
-                        ? 'Visa card'
-                        : 'Cash on delivery',
+                    order.payMethod == 'visa' ? 'Visa card' : 'Cash on delivery',
                   ),
                   const SizedBox(height: 12),
-                  _infoRow(
-                    Icons.calendar_today_outlined,
-                    'Order date',
-                    _formatDate(order.date),
-                  ),
+                  _infoRow(Icons.calendar_today_outlined, 'Order date', _formatDate(order.date)),
                   Divider(height: 20, color: AppTheme.divider),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        'Total',
-                        style: AppTheme.subheading.copyWith(fontSize: 15),
-                      ),
+                      Text('Total', style: AppTheme.subheading.copyWith(fontSize: 15)),
                       Text(
                         '${order.total.toStringAsFixed(2)} JD',
                         style: const TextStyle(
@@ -1361,8 +804,196 @@ class _OrderDetailScreen extends StatelessWidget {
                 ],
               ),
             ),
+
+            // ── Rating section (delivered orders only) ───────────────────────
+            if (order.status == OrderStatus.delivered) _buildRatingSection(),
+
+            const SizedBox(height: 30),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildRatingSection() {
+    final allItemsRated = _ratings.length == order.items.length;
+    final driverRatingDone = !order.hasDriver || _driverRating > 0;
+    final allRated = allItemsRated && driverRatingDone;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 24),
+        Row(
+          children: [
+            Text('Rate Your Order', style: AppTheme.subheading.copyWith(fontSize: 15)),
+            const SizedBox(width: 8),
+            if (_alreadyRated)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  'Rated',
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.green,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: AppTheme.card(radius: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ...order.items.asMap().entries.map((e) => _buildItemRatingRow(e.key, e.value)),
+              if (order.hasDriver) _buildDriverRatingRow(),
+              if (!_alreadyRated) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: allRated && !_isSubmitting ? _submitRatings : null,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                      disabledBackgroundColor: AppTheme.primary.withValues(alpha: 0.3),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: _isSubmitting
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Text(
+                            'Submit Rating',
+                            style: TextStyle(
+                              fontFamily: 'Poppins',
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                  ),
+                ),
+              ] else ...[
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.check_circle_rounded, color: Colors.green, size: 16),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Thank you for your feedback!',
+                      style: AppTheme.body.copyWith(fontSize: 13, color: Colors.green),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildItemRatingRow(int index, OrderLineItem item) {
+    final key = '$index';
+    final rating = _ratings[key] ?? 0;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            item.name,
+            style: AppTheme.body.copyWith(fontSize: 13, fontWeight: FontWeight.w600),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: List.generate(5, (i) {
+              final star = i + 1;
+              return GestureDetector(
+                onTap: _alreadyRated
+                    ? null
+                    : () => setState(() => _ratings[key] = star),
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Icon(
+                    star <= rating ? Icons.star_rounded : Icons.star_border_rounded,
+                    color: star <= rating ? Colors.amber : AppTheme.muted,
+                    size: 30,
+                  ),
+                ),
+              );
+            }),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDriverRatingRow() {
+    final label = (order.driverName?.trim().isNotEmpty == true)
+        ? 'Driver — ${order.driverName}'
+        : 'Driver';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Divider(height: 20, color: AppTheme.divider),
+          Row(
+            children: [
+              const Icon(Icons.delivery_dining, size: 16, color: AppTheme.primary),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: AppTheme.body.copyWith(fontSize: 13, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: List.generate(5, (i) {
+              final star = i + 1;
+              return GestureDetector(
+                onTap: _alreadyRated
+                    ? null
+                    : () => setState(() => _driverRating = star),
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Icon(
+                    star <= _driverRating
+                        ? Icons.star_rounded
+                        : Icons.star_border_rounded,
+                    color: star <= _driverRating ? Colors.amber : AppTheme.muted,
+                    size: 30,
+                  ),
+                ),
+              );
+            }),
+          ),
+        ],
       ),
     );
   }
@@ -1371,14 +1002,12 @@ class _OrderDetailScreen extends StatelessWidget {
     final steps = [
       OrderStatus.processing,
       OrderStatus.confirmed,
-      OrderStatus.assigned,
-      OrderStatus.pickedUp,
-      OrderStatus.inTransit,
+      OrderStatus.shipped,
       OrderStatus.delivered,
     ];
     final currentIdx = order.status == OrderStatus.cancelled
         ? -1
-        : steps.indexOf(order.status).clamp(0, steps.length - 1);
+        : steps.indexOf(order.status);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1393,19 +1022,12 @@ class _OrderDetailScreen extends StatelessWidget {
                     color: Colors.red.withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
-                    Icons.cancel_outlined,
-                    color: Colors.red,
-                    size: 22,
-                  ),
+                  child: const Icon(Icons.cancel_outlined, color: Colors.red, size: 22),
                 ),
                 const SizedBox(width: 12),
                 Text(
                   'Order cancelled',
-                  style: AppTheme.subheading.copyWith(
-                    fontSize: 15,
-                    color: Colors.red,
-                  ),
+                  style: AppTheme.subheading.copyWith(fontSize: 15, color: Colors.red),
                 ),
               ],
             )
@@ -1416,9 +1038,7 @@ class _OrderDetailScreen extends StatelessWidget {
                     child: Container(
                       height: 3,
                       decoration: BoxDecoration(
-                        color: i ~/ 2 < currentIdx
-                            ? AppTheme.primary
-                            : AppTheme.divider,
+                        color: i ~/ 2 < currentIdx ? AppTheme.primary : AppTheme.divider,
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -1469,13 +1089,7 @@ class _OrderDetailScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                label,
-                style: AppTheme.body.copyWith(
-                  fontSize: 11,
-                  color: AppTheme.muted,
-                ),
-              ),
+              Text(label, style: AppTheme.body.copyWith(fontSize: 11, color: AppTheme.muted)),
               const SizedBox(height: 2),
               Text(value, style: AppTheme.body.copyWith(fontSize: 13)),
             ],
