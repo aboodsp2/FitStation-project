@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  static const Color background   = Color(0xFFF5EFE6);
+  static const Color background   = Color(0xFFF5F3FF);
   static const Color surface      = Color(0xFFFFFFFF);
-  static const Color primary      = Color(0xFF5C3D2E);
-  static const Color primaryLight = Color(0xFF8B6351);
-  static const Color accent       = Color(0xFFC9A87C);
-  static const Color dark         = Color(0xFF1C1008);
-  static const Color muted        = Color(0xFF9E8A7A);
-  static const Color divider      = Color(0xFFE8DDD4);
+  static const Color primary      = Color(0xFF004AAD);
+  static const Color primaryLight = Color(0xFF1A6FD4);
+  static const Color accent       = Color(0xFFE2A9F1);
+  static const Color dark         = Color(0xFF79275F);
+  static const Color muted        = Color(0xFF9E5C82);
+  static const Color divider      = Color(0xFFEDD5F8);
 
   static const String _f = 'Poppins';
 
@@ -34,7 +34,7 @@ class AppTheme {
     brightness: Brightness.light,
     scaffoldBackgroundColor: background,
     colorScheme: const ColorScheme.light(
-      primary: primary, secondary: accent, surface: surface,
+      primary: primary, secondary: dark, tertiary: accent, surface: surface,
     ),
     textTheme: const TextTheme(
       displayLarge:   TextStyle(fontFamily: _f, fontWeight: FontWeight.w700),
@@ -61,7 +61,7 @@ class AppTheme {
 
   static BoxDecoration card({double radius = 20}) => BoxDecoration(
     color: surface, borderRadius: BorderRadius.circular(radius),
-    boxShadow: [BoxShadow(color: primary.withValues(alpha: 0.07),
+    boxShadow: [BoxShadow(color: primary.withValues(alpha: 0.10),
         blurRadius: 16, offset: const Offset(0, 5))],
   );
 
@@ -69,13 +69,13 @@ class AppTheme {
       InputDecoration(
         hintText: hint,
         hintStyle: const TextStyle(fontFamily: _f, color: muted, fontSize: 14),
-        prefixIcon: Icon(icon, color: accent, size: 20),
+        prefixIcon: Icon(icon, color: primary, size: 20),
         filled: true, fillColor: surface,
         contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 18),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(16),
             borderSide: BorderSide.none),
         focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: accent, width: 1.5)),
+            borderSide: const BorderSide(color: primary, width: 1.5)),
         enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16),
             borderSide: const BorderSide(color: divider, width: 1)),
       );

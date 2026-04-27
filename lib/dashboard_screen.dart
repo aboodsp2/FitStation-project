@@ -320,6 +320,7 @@ class _HomeTabState extends State<_HomeTab> {
       "btn": "Shop Now",
       "icon": Icons.local_fire_department_rounded,
       "action": "supplements",
+      "bg": "assets/background/banner1.jpg",
     },
     {
       "tag": "MEAL PLANS",
@@ -328,6 +329,7 @@ class _HomeTabState extends State<_HomeTab> {
       "btn": "Customize",
       "icon": Icons.restaurant_menu_rounded,
       "action": "meal",
+      "bg": "assets/background/banner2.jpg",
     },
     {
       "tag": "BOOK NOW",
@@ -336,6 +338,7 @@ class _HomeTabState extends State<_HomeTab> {
       "btn": "Reserve",
       "icon": Icons.video_call_rounded,
       "action": "consultation",
+      "bg": "assets/background/banner3.jpg",
     },
   ];
 
@@ -345,24 +348,28 @@ class _HomeTabState extends State<_HomeTab> {
       "sub": "By Muscle Group",
       "icon": Icons.fitness_center_rounded,
       "idx": 0,
+      "bg": "assets/background/training_plan.jpg",
     },
     {
       "title": "Supplements",
       "sub": "Elite Store",
       "icon": Icons.science_rounded,
       "idx": 1,
+      "bg": "assets/background/supplement.jpg",
     },
     {
       "title": "Meal Plan",
       "sub": "Custom Diet",
       "icon": Icons.restaurant_menu_rounded,
       "idx": 2,
+      "bg": "assets/background/meal_plan.jpg",
     },
     {
       "title": "Consultation",
       "sub": "Book a Session",
       "icon": Icons.video_call_rounded,
       "idx": 3,
+      "bg": "assets/background/consultation.jpg",
     },
   ];
 
@@ -660,16 +667,26 @@ class _HomeTabState extends State<_HomeTab> {
                   // ── Static slides 0-2 ──────────────────────────────────
                   if (i < _staticBanners.length) {
                     final b = _staticBanners[i];
+                    final bannerBg = b["bg"] as String?;
                     return ClipRRect(
                       borderRadius: BorderRadius.circular(24),
                       child: Container(
                         margin: const EdgeInsets.symmetric(horizontal: 2),
                         decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [AppTheme.primary, AppTheme.primaryLight],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
+                          gradient: bannerBg == null
+                              ? LinearGradient(
+                                  colors: [AppTheme.primary, AppTheme.primaryLight],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                )
+                              : null,
+                          image: bannerBg != null
+                              ? DecorationImage(
+                                  image: AssetImage(bannerBg),
+                                  fit: BoxFit.cover,
+                                  alignment: Alignment.centerRight,
+                                )
+                              : null,
                           borderRadius: BorderRadius.circular(24),
                           boxShadow: [
                             BoxShadow(
@@ -681,6 +698,23 @@ class _HomeTabState extends State<_HomeTab> {
                         ),
                         child: Stack(
                           children: [
+                            // Left-to-right dark overlay for readability on photo banners
+                            if (bannerBg != null)
+                              Positioned.fill(
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [
+                                        Colors.black.withValues(alpha: 0.55),
+                                        Colors.transparent,
+                                      ],
+                                      begin: Alignment.centerLeft,
+                                      end: Alignment.centerRight,
+                                      stops: const [0.0, 0.65],
+                                    ),
+                                  ),
+                                ),
+                              ),
                             Positioned(
                               right: -20,
                               top: -20,
@@ -755,6 +789,7 @@ class _HomeTabState extends State<_HomeTab> {
                                   const SizedBox(height: 12),
                                   GestureDetector(
                                     onTap: () {
+                                      if (!GuestManager().requireAuth(context)) return;
                                       final action = b["action"] as String;
                                       switch (action) {
                                         case "supplements":
@@ -820,10 +855,10 @@ class _HomeTabState extends State<_HomeTab> {
                     child: Container(
                       margin: const EdgeInsets.symmetric(horizontal: 2),
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [AppTheme.primary, AppTheme.primaryLight],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
+                        image: const DecorationImage(
+                          image: AssetImage('assets/background/banner4.jpg'),
+                          fit: BoxFit.cover,
+                          alignment: Alignment.centerRight,
                         ),
                         borderRadius: BorderRadius.circular(24),
                         boxShadow: [
@@ -836,25 +871,19 @@ class _HomeTabState extends State<_HomeTab> {
                       ),
                       child: Stack(
                         children: [
-                          Positioned(
-                            right: -20,
-                            top: -20,
+                          Positioned.fill(
                             child: Container(
-                              width: 140,
-                              height: 140,
                               decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.06),
-                                shape: BoxShape.circle,
+                                gradient: LinearGradient(
+                                  colors: [
+                                    Colors.black.withValues(alpha: 0.55),
+                                    Colors.transparent,
+                                  ],
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                  stops: const [0.0, 0.65],
+                                ),
                               ),
-                            ),
-                          ),
-                          Positioned(
-                            right: 16,
-                            bottom: 10,
-                            child: Icon(
-                              Icons.local_offer_rounded,
-                              size: 60,
-                              color: Colors.white.withValues(alpha: 0.10),
                             ),
                           ),
                           Padding(
@@ -905,12 +934,15 @@ class _HomeTabState extends State<_HomeTab> {
                                 ),
                                 const SizedBox(height: 12),
                                 GestureDetector(
-                                  onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => DealsScreen(deals: deals),
-                                    ),
-                                  ),
+                                  onTap: () {
+                                    if (!GuestManager().requireAuth(context)) return;
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => DealsScreen(deals: deals),
+                                      ),
+                                    );
+                                  },
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 18,
@@ -981,10 +1013,10 @@ class _HomeTabState extends State<_HomeTab> {
     }
 
     const cardGradients = [
-      [Color(0xFF3B2314), Color(0xFF7B5035)],
-      [Color(0xFF1C2A1E), Color(0xFF3A5C3E)],
-      [Color(0xFF2A1C0E), Color(0xFF6B4C2A)],
-      [Color(0xFF1A1A2A), Color(0xFF3D3460)],
+      [Color(0xFF003A8C), Color(0xFF004AAD)],  // Training Plan  – deep blue
+      [Color(0xFF62194E), Color(0xFF79275F)],  // Supplements    – dark purple
+      [Color(0xFF004AAD), Color(0xFF1A6FD4)],  // Meal Plan      – bright blue
+      [Color(0xFF4E1040), Color(0xFF79275F)],  // Consultation   – deep purple
     ];
 
     return GridView.builder(
@@ -1001,6 +1033,7 @@ class _HomeTabState extends State<_HomeTab> {
         final item = list[i];
         final idx = item["idx"] as int;
         final cols = cardGradients[idx % cardGradients.length];
+        final bg = item["bg"] as String?;
         return GestureDetector(
           onTap: () {
             final isGuest = GuestManager().isGuest;
@@ -1031,10 +1064,9 @@ class _HomeTabState extends State<_HomeTab> {
           },
           child: Container(
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: cols,
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+              image: DecorationImage(
+                image: AssetImage(bg!),
+                fit: BoxFit.cover,
               ),
               borderRadius: BorderRadius.circular(22),
               boxShadow: [
@@ -1045,59 +1077,59 @@ class _HomeTabState extends State<_HomeTab> {
                 ),
               ],
             ),
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Stack(
               children: [
-                Container(
-                  width: 46,
-                  height: 46,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.10),
-                    borderRadius: BorderRadius.circular(13),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.08),
-                      width: 1,
-                    ),
-                  ),
-                  child: Icon(
-                    item["icon"] as IconData,
-                    color: AppTheme.accent,
-                    size: 24,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  item["title"] as String,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                    letterSpacing: 0.2,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  item["sub"] as String,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.48),
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Align(
-                  alignment: Alignment.centerRight,
+                // Dark gradient at the bottom for text readability
+                Positioned(
+                  left: 0, right: 0, bottom: 0,
                   child: Container(
-                    padding: const EdgeInsets.all(7),
+                    height: 90,
                     decoration: BoxDecoration(
-                      color: AppTheme.accent.withValues(alpha: 0.22),
-                      shape: BoxShape.circle,
+                      borderRadius: const BorderRadius.vertical(
+                        bottom: Radius.circular(22),
+                      ),
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.72),
+                        ],
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.arrow_forward_rounded,
-                      color: AppTheme.accent,
-                      size: 16,
-                    ),
+                  ),
+                ),
+                // Text at the bottom
+                Positioned(
+                  left: 14, right: 14, bottom: 14,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        item["title"] as String,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                          letterSpacing: 0.2,
+                          shadows: [
+                            Shadow(color: Colors.black54, blurRadius: 4),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        item["sub"] as String,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 11,
+                          shadows: [
+                            Shadow(color: Colors.black54, blurRadius: 4),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],

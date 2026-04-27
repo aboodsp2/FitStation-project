@@ -20,7 +20,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen> {
   final _phoneController = TextEditingController();
   final _vehicleNumberController = TextEditingController();
   final _ageController = TextEditingController();
-  
+
   String _selectedVehicleType = 'Motorcycle';
   bool _isLoading = false;
   bool _isLoginMode = false; // Toggle between signup and login
@@ -177,10 +177,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen> {
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-      ),
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
     );
   }
 
@@ -196,7 +193,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen> {
             fit: BoxFit.cover,
             errorBuilder: (_, __, ___) => Container(color: Colors.black),
           ),
-          
+
           // Dark overlay
           Container(color: Colors.black.withOpacity(0.75)),
 
@@ -227,11 +224,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen> {
                   const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
-                        Icons.change_history,
-                        color: Colors.white,
-                        size: 24,
-                      ),
+                      Icon(Icons.change_history, color: Colors.white, size: 24),
                       SizedBox(width: 10),
                       Text(
                         "FITSTATION",
@@ -254,11 +247,16 @@ class _DriverSignupScreenState extends State<DriverSignupScreen> {
                       width: 80,
                       height: 80,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF5C3D2E),
+                        color: const Color.fromARGB(255, 255, 255, 255),
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFF5C3D2E).withOpacity(0.5),
+                            color: const Color.fromARGB(
+                              255,
+                              0,
+                              0,
+                              0,
+                            ).withOpacity(0.5),
                             blurRadius: 20,
                             offset: const Offset(0, 10),
                           ),
@@ -266,7 +264,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen> {
                       ),
                       child: const Icon(
                         Icons.delivery_dining,
-                        color: Colors.white,
+                        color: Colors.black,
                         size: 44,
                       ),
                     ),
@@ -372,8 +370,9 @@ class _DriverSignupScreenState extends State<DriverSignupScreen> {
                         separatorBuilder: (_, __) => const SizedBox(width: 10),
                         itemBuilder: (context, index) {
                           final vehicle = _vehicleTypes[index];
-                          final isSelected = _selectedVehicleType == vehicle['name'];
-                          
+                          final isSelected =
+                              _selectedVehicleType == vehicle['name'];
+
                           return GestureDetector(
                             onTap: () => setState(() {
                               _selectedVehicleType = vehicle['name'] as String;
@@ -382,13 +381,13 @@ class _DriverSignupScreenState extends State<DriverSignupScreen> {
                               duration: const Duration(milliseconds: 200),
                               width: 90,
                               decoration: BoxDecoration(
-                                color: isSelected 
-                                    ? Colors.white 
+                                color: isSelected
+                                    ? Colors.white
                                     : Colors.white.withOpacity(0.1),
                                 borderRadius: BorderRadius.circular(14),
                                 border: Border.all(
-                                  color: isSelected 
-                                      ? Colors.white 
+                                  color: isSelected
+                                      ? Colors.white
                                       : Colors.white.withOpacity(0.3),
                                 ),
                               ),
@@ -397,7 +396,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen> {
                                 children: [
                                   Icon(
                                     vehicle['icon'] as IconData,
-                                    color: isSelected 
+                                    color: isSelected
                                         ? const Color(0xFF5C3D2E)
                                         : Colors.white,
                                     size: 28,
@@ -409,7 +408,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen> {
                                       fontFamily: 'Poppins',
                                       fontSize: 11,
                                       fontWeight: FontWeight.w600,
-                                      color: isSelected 
+                                      color: isSelected
                                           ? const Color(0xFF5C3D2E)
                                           : Colors.white,
                                     ),
@@ -524,10 +523,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen> {
       obscureText: obscureText,
       keyboardType: keyboardType,
       textCapitalization: textCapitalization,
-      style: const TextStyle(
-        color: Colors.white,
-        fontFamily: 'Poppins',
-      ),
+      style: const TextStyle(color: Colors.white, fontFamily: 'Poppins'),
       decoration: InputDecoration(
         prefixIcon: Icon(icon, color: Colors.white70),
         hintText: hint,
@@ -613,7 +609,10 @@ class DriverApplicationSentPage extends StatelessWidget {
             const SizedBox(height: 36),
             Text(
               'Application Submitted!',
-              style: AppTheme.heading.copyWith(fontSize: 24, letterSpacing: 0.3),
+              style: AppTheme.heading.copyWith(
+                fontSize: 24,
+                letterSpacing: 0.3,
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
@@ -632,15 +631,23 @@ class DriverApplicationSentPage extends StatelessWidget {
               decoration: BoxDecoration(
                 color: AppTheme.accent.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppTheme.accent.withValues(alpha: 0.3)),
+                border: Border.all(
+                  color: AppTheme.accent.withValues(alpha: 0.3),
+                ),
               ),
               child: Column(
                 children: [
-                  Text('We will notify you at', style: AppTheme.body.copyWith(fontSize: 13)),
+                  Text(
+                    'We will notify you at',
+                    style: AppTheme.body.copyWith(fontSize: 13),
+                  ),
                   const SizedBox(height: 4),
                   Text(
                     email,
-                    style: AppTheme.subheading.copyWith(fontSize: 13, color: AppTheme.primary),
+                    style: AppTheme.subheading.copyWith(
+                      fontSize: 13,
+                      color: AppTheme.primary,
+                    ),
                     textAlign: TextAlign.center,
                   ),
                 ],
@@ -651,11 +658,20 @@ class DriverApplicationSentPage extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 36),
               child: Column(
                 children: [
-                  _step(Icons.hourglass_top_rounded, 'Our team reviews your application'),
+                  _step(
+                    Icons.hourglass_top_rounded,
+                    'Our team reviews your application',
+                  ),
                   const SizedBox(height: 10),
-                  _step(Icons.email_rounded, 'You receive an approval or feedback email'),
+                  _step(
+                    Icons.email_rounded,
+                    'You receive an approval or feedback email',
+                  ),
                   const SizedBox(height: 10),
-                  _step(Icons.check_circle_rounded, 'If approved, log in and start delivering'),
+                  _step(
+                    Icons.check_circle_rounded,
+                    'If approved, log in and start delivering',
+                  ),
                 ],
               ),
             ),
@@ -666,10 +682,13 @@ class DriverApplicationSentPage extends StatelessWidget {
                 width: double.infinity,
                 height: 56,
                 child: ElevatedButton(
-                  onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst),
+                  onPressed: () =>
+                      Navigator.of(context).popUntil((r) => r.isFirst),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.primary,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
                     elevation: 6,
                     shadowColor: AppTheme.primary.withValues(alpha: 0.4),
                   ),

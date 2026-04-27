@@ -553,19 +553,13 @@ class _SuperAdminDashboard extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 28),
-        Text(
-          'Recent Orders',
-          style: AppTheme.subheading.copyWith(fontSize: 15),
-        ),
+        Text('Revenue Overview', style: AppTheme.subheading.copyWith(fontSize: 15)),
         const SizedBox(height: 12),
-        _RecentOrdersList(),
+        _RevenueOverview(),
         const SizedBox(height: 28),
-        Text(
-          'Recent Consultations',
-          style: AppTheme.subheading.copyWith(fontSize: 15),
-        ),
+        Text('Top Products', style: AppTheme.subheading.copyWith(fontSize: 15)),
         const SizedBox(height: 12),
-        _RecentConsultsList(),
+        _TopSellersList(),
       ],
     );
   }
@@ -638,6 +632,240 @@ class _StatCard extends StatelessWidget {
   }
 }
 
+// ── Revenue Overview ─────────────────────────────────────────────────────────
+class _RevenueOverview extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance.collection('deliveryOrders').snapshots(),
+      builder: (_, snap) {
+        final docs = snap.data?.docs ?? [];
+        double totalRev = 0, completedRev = 0, pendingRev = 0;
+        int completed = 0, pending = 0, cancelled = 0;
+        for (final d in docs) {
+          final data = d.data() as Map<String, dynamic>;
+          final total = _safeDouble(data['total']);
+          final status = data['status'] as String? ?? '';
+          totalRev += total;
+          if (status == 'delivered' || status == 'completed') {
+            completedRev += total;
+            completed++;
+          } else if (status == 'cancelled') {
+            cancelled++;
+          } else {
+            pendingRev += total;
+            pending++;
+          }
+        }
+        return Column(
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF003A8C), Color(0xFF004AAD)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Total Revenue',
+                      style: TextStyle(fontFamily: 'Poppins', color: Colors.white70, fontSize: 12)),
+                  const SizedBox(height: 4),
+                  Text('${totalRev.toStringAsFixed(2)} JOD',
+                      style: const TextStyle(
+                          fontFamily: 'Poppins', color: Colors.white,
+                          fontSize: 26, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      _RevChip(label: 'Completed', value: '${completedRev.toStringAsFixed(0)} JOD',
+                          color: const Color(0xFF4CAF50)),
+                      const SizedBox(width: 8),
+                      _RevChip(label: 'Pending', value: '${pendingRev.toStringAsFixed(0)} JOD',
+                          color: const Color(0xFFFFA726)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                _MiniStatCard(label: 'Completed', value: '$completed',
+                    icon: Icons.check_circle_rounded, color: const Color(0xFF4CAF50)),
+                const SizedBox(width: 10),
+                _MiniStatCard(label: 'In Progress', value: '$pending',
+                    icon: Icons.hourglass_top_rounded, color: const Color(0xFFFFA726)),
+                const SizedBox(width: 10),
+                _MiniStatCard(label: 'Cancelled', value: '$cancelled',
+                    icon: Icons.cancel_rounded, color: const Color(0xFFE53935)),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _RevChip extends StatelessWidget {
+  final String label, value;
+  final Color color;
+  const _RevChip({required this.label, required this.value, required this.color});
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.18),
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: TextStyle(fontFamily: 'Poppins', fontSize: 9,
+            color: color, fontWeight: FontWeight.w600)),
+        Text(value, style: TextStyle(fontFamily: 'Poppins', fontSize: 11,
+            color: color, fontWeight: FontWeight.w800)),
+      ],
+    ),
+  );
+}
+
+class _MiniStatCard extends StatelessWidget {
+  final String label, value;
+  final IconData icon;
+  final Color color;
+  const _MiniStatCard({required this.label, required this.value,
+      required this.icon, required this.color});
+  @override
+  Widget build(BuildContext context) => Expanded(
+    child: Container(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [BoxShadow(color: color.withValues(alpha: 0.10),
+            blurRadius: 10, offset: const Offset(0, 3))],
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(height: 5),
+          Text(value, style: TextStyle(fontFamily: 'Poppins', fontSize: 16,
+              fontWeight: FontWeight.w800, color: AppTheme.dark)),
+          Text(label, style: AppTheme.body.copyWith(fontSize: 10),
+              textAlign: TextAlign.center),
+        ],
+      ),
+    ),
+  );
+}
+
+// ── Top Products ──────────────────────────────────────────────────────────────
+class _TopSellersList extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('supplements')
+          .orderBy('price', descending: true)
+          .limit(5)
+          .snapshots(),
+      builder: (_, snap) {
+        if (!snap.hasData) {
+          return const Center(
+              child: CircularProgressIndicator(color: AppTheme.primary));
+        }
+        final docs = snap.data!.docs;
+        if (docs.isEmpty) return _EmptyState(label: 'No products yet');
+        return Column(
+          children: List.generate(docs.length, (i) {
+            final d = docs[i].data() as Map<String, dynamic>;
+            final name = d['name'] as String? ?? '—';
+            final price = _safeDouble(d['price']);
+            final discount = d['discountPrice'] != null
+                ? _safeDouble(d['discountPrice']) : null;
+            final imageUrl = d['imageUrl'] as String? ?? '';
+            return Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(12),
+              decoration: AppTheme.card(radius: 14),
+              child: Row(
+                children: [
+                  Container(
+                    width: 42, height: 42,
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: imageUrl.isNotEmpty
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.network(imageUrl, fit: BoxFit.cover,
+                                errorBuilder: (_, e, st) => Icon(
+                                    Icons.inventory_2_rounded,
+                                    color: AppTheme.primary, size: 20)),
+                          )
+                        : Icon(Icons.inventory_2_rounded,
+                            color: AppTheme.primary, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(name,
+                            style: AppTheme.subheading.copyWith(fontSize: 13),
+                            overflow: TextOverflow.ellipsis),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            if (discount != null) ...[
+                              Text('${discount.toStringAsFixed(0)} JOD',
+                                  style: TextStyle(fontFamily: 'Poppins',
+                                      fontSize: 12, fontWeight: FontWeight.w700,
+                                      color: AppTheme.primary)),
+                              const SizedBox(width: 5),
+                              Text('${price.toStringAsFixed(0)} JOD',
+                                  style: AppTheme.body.copyWith(
+                                      fontSize: 11,
+                                      decoration: TextDecoration.lineThrough)),
+                            ] else
+                              Text('${price.toStringAsFixed(0)} JOD',
+                                  style: TextStyle(fontFamily: 'Poppins',
+                                      fontSize: 12, fontWeight: FontWeight.w700,
+                                      color: AppTheme.primary)),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text('#${i + 1}',
+                        style: TextStyle(fontFamily: 'Poppins', fontSize: 11,
+                            fontWeight: FontWeight.w800, color: AppTheme.primary)),
+                  ),
+                ],
+              ),
+            );
+          }),
+        );
+      },
+    );
+  }
+}
+
+// ── Old unused classes removed ────────────────────────────────────────────────
 class _RecentOrdersList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -3807,7 +4035,8 @@ class _FitStationPlansTab extends StatelessWidget {
       'id': 'weight_loss',
       'label': 'Weight Loss Plan',
       'icon': Icons.trending_down_rounded,
-      'color': Color(0xFF1E6B4A),
+      'colorStart': Color(0xFF003A8C),
+      'colorEnd':   Color(0xFF004AAD),
       'kcal': '1,500 kcal/day',
       'defaultPrice': 35.0,
     },
@@ -3815,7 +4044,8 @@ class _FitStationPlansTab extends StatelessWidget {
       'id': 'maintain',
       'label': 'Maintain Weight Plan',
       'icon': Icons.balance_rounded,
-      'color': Color(0xFF1A5276),
+      'colorStart': Color(0xFF62194E),
+      'colorEnd':   Color(0xFF79275F),
       'kcal': '2,000 kcal/day',
       'defaultPrice': 38.0,
     },
@@ -3823,7 +4053,8 @@ class _FitStationPlansTab extends StatelessWidget {
       'id': 'muscle_gain',
       'label': 'Muscle Gain Plan',
       'icon': Icons.trending_up_rounded,
-      'color': Color(0xFF7B2D00),
+      'colorStart': Color(0xFF004AAD),
+      'colorEnd':   Color(0xFF79275F),
       'kcal': '2,800 kcal/day',
       'defaultPrice': 48.0,
     },
@@ -3844,7 +4075,8 @@ class _PlanAdminCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = plan['color'] as Color;
+    final colorStart = plan['colorStart'] as Color;
+    final colorEnd   = plan['colorEnd']   as Color;
 
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance
@@ -3866,7 +4098,7 @@ class _PlanAdminCard extends StatelessWidget {
             border: Border.all(color: AppTheme.divider),
             boxShadow: [
               BoxShadow(
-                color: color.withValues(alpha: 0.10),
+                color: colorStart.withValues(alpha: 0.20),
                 blurRadius: 12,
                 offset: const Offset(0, 4),
               ),
@@ -3878,7 +4110,11 @@ class _PlanAdminCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
                 decoration: BoxDecoration(
-                  color: color,
+                  gradient: LinearGradient(
+                    colors: [colorStart, colorEnd],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
                   borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(20),
                   ),
@@ -3980,7 +4216,7 @@ class _PlanAdminCard extends StatelessWidget {
                             fontFamily: 'Poppins',
                             fontSize: 24,
                             fontWeight: FontWeight.w800,
-                            color: color,
+                            color: colorStart,
                           ),
                         ),
                         Text(

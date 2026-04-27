@@ -1743,9 +1743,15 @@ class _ShimmerBoxState extends State<_ShimmerBox>
 // ═══════════════════════════════════════════════════════════════════════════
 
 class _GoalStyle {
-  final Color cardBg, iconBg, iconColor, titleColor, subColor;
+  final Color gradientStart,
+      gradientEnd,
+      iconBg,
+      iconColor,
+      titleColor,
+      subColor;
   const _GoalStyle({
-    required this.cardBg,
+    required this.gradientStart,
+    required this.gradientEnd,
     required this.iconBg,
     required this.iconColor,
     required this.titleColor,
@@ -1754,25 +1760,28 @@ class _GoalStyle {
 }
 
 const _styleWeightLoss = _GoalStyle(
-  cardBg: Color(0xFF5C3D2E),
-  iconBg: Color(0xFF7A5240),
-  iconColor: Color(0xFFC9A87C),
+  gradientStart: Color(0xFF003A8C),
+  gradientEnd: Color(0xFF004AAD),
+  iconBg: Color.fromARGB(255, 26, 111, 212),
+  iconColor: Color(0xFFE2A9F1),
   titleColor: Colors.white,
-  subColor: Color(0xFFD4B896),
+  subColor: Color(0xFFB8D4FF),
 );
 const _styleMaintain = _GoalStyle(
-  cardBg: Color(0xFFE6D3B3),
-  iconBg: Color(0xFFD4BB95),
-  iconColor: Color(0xFF5C3D2E),
-  titleColor: Color(0xFF3B2214),
-  subColor: Color(0xFF7A5C3E),
+  gradientStart: Color(0xFF62194E),
+  gradientEnd: Color(0xFF79275F),
+  iconBg: Color(0xFF9B3070),
+  iconColor: Color(0xFFE2A9F1),
+  titleColor: Colors.white,
+  subColor: Color(0xFFD9A8C8),
 );
 const _styleMuscleGain = _GoalStyle(
-  cardBg: Color(0xFF3B2214),
-  iconBg: Color(0xFF5C3D2E),
-  iconColor: Color(0xFFC9A87C),
+  gradientStart: Color(0xFF004AAD),
+  gradientEnd: Color(0xFF79275F),
+  iconBg: Color.fromARGB(255, 2, 66, 150),
+  iconColor: Color(0xFFE2A9F1),
   titleColor: Colors.white,
-  subColor: Color(0xFFBFA08A),
+  subColor: Color(0xFFCCB8E8),
 );
 
 class MealPlanScreen extends StatefulWidget {
@@ -2041,7 +2050,11 @@ class _GoalCard extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.only(bottom: 14),
         decoration: BoxDecoration(
-          color: style.cardBg,
+          gradient: LinearGradient(
+            colors: [style.gradientStart, style.gradientEnd],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
           borderRadius: BorderRadius.circular(24),
           border: isRecommended
               ? Border.all(color: AppTheme.accent, width: 2)
@@ -2060,23 +2073,6 @@ class _GoalCard extends StatelessWidget {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: Colors.white.withOpacity(0.04),
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 0,
-                top: 0,
-                bottom: 0,
-                child: Container(
-                  width: 4,
-                  decoration: BoxDecoration(
-                    color: isRecommended
-                        ? AppTheme.accent
-                        : AppTheme.accent.withOpacity(0.35),
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(24),
-                      bottomLeft: Radius.circular(24),
-                    ),
                   ),
                 ),
               ),
@@ -2662,7 +2658,7 @@ class _MealDetailScreenState extends State<_MealDetailScreen> {
           SliverAppBar(
             expandedHeight: 250,
             pinned: true,
-            backgroundColor: widget.goalStyle.cardBg,
+            backgroundColor: widget.goalStyle.gradientStart,
             leading: IconButton(
               icon: const Icon(
                 Icons.arrow_back_ios_new_rounded,
@@ -2684,8 +2680,8 @@ class _MealDetailScreenState extends State<_MealDetailScreen> {
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
-                          widget.goalStyle.cardBg,
-                          AppTheme.primaryLight,
+                          widget.goalStyle.gradientStart,
+                          widget.goalStyle.gradientEnd,
                         ],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
@@ -2818,7 +2814,7 @@ class _MealDetailScreenState extends State<_MealDetailScreen> {
                         s["items"] as List,
                       ),
                       accentColor: widget.goalStyle.iconColor,
-                      headerColor: widget.goalStyle.cardBg,
+                      headerColor: widget.goalStyle.gradientStart,
                     );
                   }
                   return _AddToCartBtn(

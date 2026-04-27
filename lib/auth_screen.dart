@@ -564,9 +564,9 @@ class _SignInPageState extends State<SignInPage> {
 
   Future<void> _login() async {
     if (_emailCtrl.text.isEmpty || _passwordCtrl.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please fill all fields")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Please fill all fields")));
       return;
     }
     setState(() => _loading = true);
@@ -586,7 +586,9 @@ class _SignInPageState extends State<SignInPage> {
       );
       GuestManager().setGuest(false);
 
-      final adminRole = await AdminChecker.check(_emailCtrl.text.trim().toLowerCase());
+      final adminRole = await AdminChecker.check(
+        _emailCtrl.text.trim().toLowerCase(),
+      );
 
       if (!mounted) return;
       if (adminRole != null) {
@@ -607,15 +609,20 @@ class _SignInPageState extends State<SignInPage> {
 
       if (!mounted) return;
       if (pendingSnap.docs.isNotEmpty) {
-        final type = pendingSnap.docs.first.data()['type'] as String? ?? 'restaurant';
+        final type =
+            pendingSnap.docs.first.data()['type'] as String? ?? 'restaurant';
         final messenger = ScaffoldMessenger.of(context);
         await FirebaseAuth.instance.signOut();
         setState(() => _loading = false);
-        messenger.showSnackBar(SnackBar(
-          content: Text(type == 'driver'
-              ? 'Your driver application is still pending admin approval.'
-              : 'Your restaurant application is still pending admin approval.'),
-        ));
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              type == 'driver'
+                  ? 'Your driver application is still pending admin approval.'
+                  : 'Your restaurant application is still pending admin approval.',
+            ),
+          ),
+        );
         return;
       }
 
@@ -640,9 +647,9 @@ class _SignInPageState extends State<SignInPage> {
     } on FirebaseAuthException catch (e) {
       if (mounted) {
         setState(() => _loading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message ?? "Login Failed")),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message ?? "Login Failed")));
       }
     }
   }
@@ -914,27 +921,34 @@ class _SignUpPageState extends State<SignUpPage> {
                       _RoleCard(
                         icon: Icons.person,
                         title: 'Customer',
-                        description: 'Browse supplements, meal plans & book consultations',
+                        description:
+                            'Browse supplements, meal plans & book consultations',
                         onTap: () => setState(() => _selectedRole = 'customer'),
                       ),
                       const SizedBox(height: 14),
                       _RoleCard(
                         icon: Icons.restaurant,
                         title: 'Restaurant Partner',
-                        description: 'List your restaurant & serve healthy meals on FitStation',
+                        description:
+                            'List your restaurant & serve healthy meals on FitStation',
                         onTap: () => Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (_) => const RestaurantSignupScreen()),
+                          MaterialPageRoute(
+                            builder: (_) => const RestaurantSignupScreen(),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 14),
                       _RoleCard(
                         icon: Icons.delivery_dining,
                         title: 'Driver',
-                        description: 'Deliver orders & earn money on your own schedule',
+                        description:
+                            'Deliver orders & earn money on your own schedule',
                         onTap: () => Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (_) => const DriverSignupScreen()),
+                          MaterialPageRoute(
+                            builder: (_) => const DriverSignupScreen(),
+                          ),
                         ),
                       ),
                     ],
@@ -957,7 +971,11 @@ class _SignUpPageState extends State<SignUpPage> {
             left: 10,
             child: SafeArea(
               child: IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 30),
+                icon: const Icon(
+                  Icons.arrow_back_ios_new,
+                  color: Colors.white,
+                  size: 30,
+                ),
                 onPressed: widget.onLoginTap,
               ),
             ),
@@ -980,59 +998,103 @@ class _SignUpPageState extends State<SignUpPage> {
                 const SizedBox(height: 80),
                 const Text(
                   'SIGN UP',
-                  style: TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.white),
+                  style: TextStyle(
+                    fontSize: 40,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
                 ),
                 const SizedBox(height: 20),
-                _Input(icon: Icons.person_outline, hint: 'Full Name', controller: _nameCtrl),
-                _Input(icon: Icons.email_outlined, hint: 'Email', controller: _emailCtrl),
+                _Input(
+                  icon: Icons.person_outline,
+                  hint: 'Full Name',
+                  controller: _nameCtrl,
+                ),
+                _Input(
+                  icon: Icons.email_outlined,
+                  hint: 'Email',
+                  controller: _emailCtrl,
+                ),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 40,
+                    vertical: 8,
+                  ),
                   child: TextField(
                     controller: _passwordCtrl,
                     obscureText: !_showPassword,
                     style: const TextStyle(color: Colors.white),
                     decoration: InputDecoration(
-                      prefixIcon: const Icon(Icons.lock_outline, color: Colors.white),
+                      prefixIcon: const Icon(
+                        Icons.lock_outline,
+                        color: Colors.white,
+                      ),
                       suffixIcon: GestureDetector(
-                        onTap: () => setState(() => _showPassword = !_showPassword),
+                        onTap: () =>
+                            setState(() => _showPassword = !_showPassword),
                         child: Icon(
-                          _showPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
-                          color: Colors.white70, size: 20,
+                          _showPassword
+                              ? Icons.visibility_off_rounded
+                              : Icons.visibility_rounded,
+                          color: Colors.white70,
+                          size: 20,
                         ),
                       ),
                       hintText: 'Password',
                       hintStyle: const TextStyle(color: Colors.white70),
                       filled: true,
                       fillColor: Colors.black45,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(15),
+                        borderSide: BorderSide.none,
+                      ),
                     ),
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 40,
+                    vertical: 8,
+                  ),
                   child: TextField(
                     controller: _confirmPassCtrl,
                     obscureText: !_showConfirmPassword,
                     style: const TextStyle(color: Colors.white),
                     decoration: InputDecoration(
-                      prefixIcon: const Icon(Icons.lock_outline, color: Colors.white),
+                      prefixIcon: const Icon(
+                        Icons.lock_outline,
+                        color: Colors.white,
+                      ),
                       suffixIcon: GestureDetector(
-                        onTap: () => setState(() => _showConfirmPassword = !_showConfirmPassword),
+                        onTap: () => setState(
+                          () => _showConfirmPassword = !_showConfirmPassword,
+                        ),
                         child: Icon(
-                          _showConfirmPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
-                          color: Colors.white70, size: 20,
+                          _showConfirmPassword
+                              ? Icons.visibility_off_rounded
+                              : Icons.visibility_rounded,
+                          color: Colors.white70,
+                          size: 20,
                         ),
                       ),
                       hintText: 'Confirm Password',
                       hintStyle: const TextStyle(color: Colors.white70),
                       filled: true,
                       fillColor: Colors.black45,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(15),
+                        borderSide: BorderSide.none,
+                      ),
                     ),
                   ),
                 ),
                 const SizedBox(height: 30),
-                _Button(label: 'SIGN UP', color: Colors.black, textColor: Colors.white, onTap: _signUp),
+                _Button(
+                  label: 'SIGN UP',
+                  color: Colors.black,
+                  textColor: Colors.white,
+                  onTap: _signUp,
+                ),
                 const SizedBox(height: 60),
               ],
             ),
@@ -1042,7 +1104,11 @@ class _SignUpPageState extends State<SignUpPage> {
             left: 10,
             child: SafeArea(
               child: IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 30),
+                icon: const Icon(
+                  Icons.arrow_back_ios_new,
+                  color: Colors.white,
+                  size: 30,
+                ),
                 onPressed: () => setState(() => _selectedRole = null),
               ),
             ),
@@ -1097,7 +1163,6 @@ class _SignUpPageState extends State<SignUpPage> {
       debugPrint("Firestore Error: $e");
     }
   }
-
 }
 
 // ─── REUSABLE WIDGETS ────────────────────────────────────────────────────────
@@ -1255,7 +1320,11 @@ class _RoleCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     description,
-                    style: const TextStyle(fontSize: 12, color: Colors.white70, height: 1.4),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.white70,
+                      height: 1.4,
+                    ),
                   ),
                 ],
               ),
@@ -1345,14 +1414,17 @@ class _RestaurantSignupScreenState extends State<RestaurantSignupScreen> {
       );
     } on FirebaseAuthException catch (e) {
       String msg = 'Registration failed';
-      if (e.code == 'email-already-in-use') msg = 'Email already registered';
-      else if (e.code == 'invalid-email') msg = 'Invalid email address';
-      else if (e.code == 'weak-password') msg = 'Password is too weak';
+      if (e.code == 'email-already-in-use')
+        msg = 'Email already registered';
+      else if (e.code == 'invalid-email')
+        msg = 'Invalid email address';
+      else if (e.code == 'weak-password')
+        msg = 'Password is too weak';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('An error occurred: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('An error occurred: $e')));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -1364,8 +1436,11 @@ class _RestaurantSignupScreenState extends State<RestaurantSignupScreen> {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          Image.asset('assets/Sign_up.jpg', fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(color: Colors.black)),
+          Image.asset(
+            'assets/Sign_up.jpg',
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => Container(color: Colors.black),
+          ),
           Container(color: Colors.black.withOpacity(0.72)),
           SafeArea(
             child: SingleChildScrollView(
@@ -1377,7 +1452,11 @@ class _RestaurantSignupScreenState extends State<RestaurantSignupScreen> {
                     alignment: Alignment.topLeft,
                     child: IconButton(
                       padding: EdgeInsets.zero,
-                      icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 24),
+                      icon: const Icon(
+                        Icons.arrow_back_ios_new,
+                        color: Colors.white,
+                        size: 24,
+                      ),
                       onPressed: () => Navigator.pop(context),
                     ),
                   ),
@@ -1387,56 +1466,102 @@ class _RestaurantSignupScreenState extends State<RestaurantSignupScreen> {
                     children: [
                       Icon(Icons.change_history, color: Colors.white, size: 24),
                       SizedBox(width: 10),
-                      Text('FITSTATION',
-                          style: TextStyle(
-                              fontSize: 20, fontWeight: FontWeight.bold,
-                              color: Colors.white, letterSpacing: 2)),
+                      Text(
+                        'FITSTATION',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                          letterSpacing: 2,
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 24),
                   Center(
                     child: Container(
-                      width: 80, height: 80,
+                      width: 80,
+                      height: 80,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF5C3D2E),
+                        color: const Color.fromARGB(255, 255, 255, 255),
                         borderRadius: BorderRadius.circular(20),
-                        boxShadow: [BoxShadow(
-                            color: const Color(0xFF5C3D2E).withOpacity(0.5),
-                            blurRadius: 20, offset: const Offset(0, 10))],
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color.fromARGB(
+                              255,
+                              0,
+                              0,
+                              0,
+                            ).withOpacity(0.5),
+                            blurRadius: 20,
+                            offset: const Offset(0, 10),
+                          ),
+                        ],
                       ),
-                      child: const Icon(Icons.restaurant, color: Colors.white, size: 44),
+                      child: const Icon(
+                        Icons.restaurant,
+                        color: Color.fromARGB(255, 0, 0, 0),
+                        size: 44,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
-                  const Text('RESTAURANT SIGNUP',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900,
-                          color: Colors.white, letterSpacing: 2)),
+                  const Text(
+                    'RESTAURANT SIGNUP',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                      letterSpacing: 2,
+                    ),
+                  ),
                   const SizedBox(height: 6),
-                  const Text('Partner with FitStation to reach more customers',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 13, color: Colors.white70)),
+                  const Text(
+                    'Partner with FitStation to reach more customers',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 13, color: Colors.white70),
+                  ),
                   const SizedBox(height: 28),
-                  _field(_restaurantNameCtrl, 'Restaurant Name', Icons.storefront_outlined,
-                      cap: TextCapitalization.words),
+                  _field(
+                    _restaurantNameCtrl,
+                    'Restaurant Name',
+                    Icons.storefront_outlined,
+                    cap: TextCapitalization.words,
+                  ),
                   const SizedBox(height: 14),
-                  _field(_ownerNameCtrl, 'Owner Name', Icons.person_outline,
-                      cap: TextCapitalization.words),
+                  _field(
+                    _ownerNameCtrl,
+                    'Owner Name',
+                    Icons.person_outline,
+                    cap: TextCapitalization.words,
+                  ),
                   const SizedBox(height: 14),
-                  _field(_emailCtrl, 'Email', Icons.email_outlined,
-                      keyboard: TextInputType.emailAddress),
+                  _field(
+                    _emailCtrl,
+                    'Email',
+                    Icons.email_outlined,
+                    keyboard: TextInputType.emailAddress,
+                  ),
                   const SizedBox(height: 14),
                   TextField(
                     controller: _passwordCtrl,
                     obscureText: !_showPassword,
                     style: const TextStyle(color: Colors.white),
                     decoration: InputDecoration(
-                      prefixIcon: const Icon(Icons.lock_outline, color: Colors.white70),
+                      prefixIcon: const Icon(
+                        Icons.lock_outline,
+                        color: Colors.white70,
+                      ),
                       suffixIcon: GestureDetector(
-                        onTap: () => setState(() => _showPassword = !_showPassword),
+                        onTap: () =>
+                            setState(() => _showPassword = !_showPassword),
                         child: Icon(
-                          _showPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
-                          color: Colors.white70, size: 20,
+                          _showPassword
+                              ? Icons.visibility_off_rounded
+                              : Icons.visibility_rounded,
+                          color: Colors.white70,
+                          size: 20,
                         ),
                       ),
                       hintText: 'Password',
@@ -1444,23 +1569,44 @@ class _RestaurantSignupScreenState extends State<RestaurantSignupScreen> {
                       filled: true,
                       fillColor: Colors.black.withOpacity(0.4),
                       border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(15),
-                          borderSide: BorderSide(color: Colors.white.withOpacity(0.2))),
+                        borderRadius: BorderRadius.circular(15),
+                        borderSide: BorderSide(
+                          color: Colors.white.withOpacity(0.2),
+                        ),
+                      ),
                       enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(15),
-                          borderSide: BorderSide(color: Colors.white.withOpacity(0.2))),
+                        borderRadius: BorderRadius.circular(15),
+                        borderSide: BorderSide(
+                          color: Colors.white.withOpacity(0.2),
+                        ),
+                      ),
                       focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(15),
-                          borderSide: const BorderSide(color: Colors.white, width: 1.5)),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+                        borderRadius: BorderRadius.circular(15),
+                        borderSide: const BorderSide(
+                          color: Colors.white,
+                          width: 1.5,
+                        ),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 18,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 14),
-                  _field(_phoneCtrl, 'Phone Number', Icons.phone_outlined,
-                      keyboard: TextInputType.phone),
+                  _field(
+                    _phoneCtrl,
+                    'Phone Number',
+                    Icons.phone_outlined,
+                    keyboard: TextInputType.phone,
+                  ),
                   const SizedBox(height: 14),
-                  _field(_addressCtrl, 'Address (optional)', Icons.location_on_outlined,
-                      cap: TextCapitalization.sentences),
+                  _field(
+                    _addressCtrl,
+                    'Address (optional)',
+                    Icons.location_on_outlined,
+                    cap: TextCapitalization.sentences,
+                  ),
                   const SizedBox(height: 32),
                   SizedBox(
                     height: 56,
@@ -1469,14 +1615,28 @@ class _RestaurantSignupScreenState extends State<RestaurantSignupScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.black,
                         foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
                         elevation: 0,
                       ),
                       child: _isLoading
-                          ? const SizedBox(width: 24, height: 24,
-                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
-                          : const Text('REGISTER AS RESTAURANT',
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, letterSpacing: 1.2)),
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2.5,
+                              ),
+                            )
+                          : const Text(
+                              'REGISTER AS RESTAURANT',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1.2,
+                              ),
+                            ),
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -1489,9 +1649,13 @@ class _RestaurantSignupScreenState extends State<RestaurantSignupScreen> {
     );
   }
 
-  Widget _field(TextEditingController ctrl, String hint, IconData icon,
-      {TextInputType keyboard = TextInputType.text,
-      TextCapitalization cap = TextCapitalization.none}) {
+  Widget _field(
+    TextEditingController ctrl,
+    String hint,
+    IconData icon, {
+    TextInputType keyboard = TextInputType.text,
+    TextCapitalization cap = TextCapitalization.none,
+  }) {
     return TextField(
       controller: ctrl,
       keyboardType: keyboard,
@@ -1504,15 +1668,21 @@ class _RestaurantSignupScreenState extends State<RestaurantSignupScreen> {
         filled: true,
         fillColor: Colors.black.withOpacity(0.4),
         border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(15),
-            borderSide: BorderSide(color: Colors.white.withOpacity(0.2))),
+          borderRadius: BorderRadius.circular(15),
+          borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
+        ),
         enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(15),
-            borderSide: BorderSide(color: Colors.white.withOpacity(0.2))),
+          borderRadius: BorderRadius.circular(15),
+          borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
+        ),
         focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(15),
-            borderSide: const BorderSide(color: Colors.white, width: 1.5)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+          borderRadius: BorderRadius.circular(15),
+          borderSide: const BorderSide(color: Colors.white, width: 1.5),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 18,
+        ),
       ),
     );
   }
@@ -1536,29 +1706,48 @@ class _RestaurantApplicationSentPage extends StatelessWidget {
                 child: GestureDetector(
                   onTap: () => Navigator.of(context).popUntil((r) => r.isFirst),
                   child: Container(
-                    width: 42, height: 42,
+                    width: 42,
+                    height: 42,
                     decoration: AppTheme.card(radius: 14),
-                    child: const Icon(Icons.arrow_back_ios_new_rounded,
-                        color: AppTheme.primary, size: 18),
+                    child: const Icon(
+                      Icons.arrow_back_ios_new_rounded,
+                      color: AppTheme.primary,
+                      size: 18,
+                    ),
                   ),
                 ),
               ),
             ),
             const Spacer(),
             Container(
-              width: 110, height: 110,
+              width: 110,
+              height: 110,
               decoration: BoxDecoration(
-                color: AppTheme.primary, shape: BoxShape.circle,
-                boxShadow: [BoxShadow(
+                color: AppTheme.primary,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
                     color: AppTheme.primary.withValues(alpha: 0.35),
-                    blurRadius: 30, offset: const Offset(0, 10))],
+                    blurRadius: 30,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
               ),
-              child: const Icon(Icons.restaurant, color: Colors.white, size: 50),
+              child: const Icon(
+                Icons.restaurant,
+                color: Colors.white,
+                size: 50,
+              ),
             ),
             const SizedBox(height: 36),
-            Text('Application Submitted!',
-                style: AppTheme.heading.copyWith(fontSize: 24, letterSpacing: 0.3),
-                textAlign: TextAlign.center),
+            Text(
+              'Application Submitted!',
+              style: AppTheme.heading.copyWith(
+                fontSize: 24,
+                letterSpacing: 0.3,
+              ),
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 16),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 36),
@@ -1575,15 +1764,25 @@ class _RestaurantApplicationSentPage extends StatelessWidget {
               decoration: BoxDecoration(
                 color: AppTheme.accent.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppTheme.accent.withValues(alpha: 0.3)),
+                border: Border.all(
+                  color: AppTheme.accent.withValues(alpha: 0.3),
+                ),
               ),
               child: Column(
                 children: [
-                  Text('We will notify you at', style: AppTheme.body.copyWith(fontSize: 13)),
+                  Text(
+                    'We will notify you at',
+                    style: AppTheme.body.copyWith(fontSize: 13),
+                  ),
                   const SizedBox(height: 4),
-                  Text(email,
-                      style: AppTheme.subheading.copyWith(fontSize: 13, color: AppTheme.primary),
-                      textAlign: TextAlign.center),
+                  Text(
+                    email,
+                    style: AppTheme.subheading.copyWith(
+                      fontSize: 13,
+                      color: AppTheme.primary,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
                 ],
               ),
             ),
@@ -1591,18 +1790,28 @@ class _RestaurantApplicationSentPage extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 28),
               child: SizedBox(
-                width: double.infinity, height: 56,
+                width: double.infinity,
+                height: 56,
                 child: ElevatedButton(
-                  onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst),
+                  onPressed: () =>
+                      Navigator.of(context).popUntil((r) => r.isFirst),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.primary,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
                     elevation: 6,
                     shadowColor: AppTheme.primary.withValues(alpha: 0.4),
                   ),
-                  child: const Text('BACK TO LOGIN',
-                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold,
-                          fontSize: 15, letterSpacing: 0.8)),
+                  child: const Text(
+                    'BACK TO LOGIN',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
                 ),
               ),
             ),

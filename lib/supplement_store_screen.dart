@@ -365,18 +365,38 @@ class _SupplementStoreScreenState extends State<SupplementStoreScreen> {
     return SizedBox(height: 155, child: _mainBannerSlide());
   }
 
-  Widget _mainBannerSlide() => ClipRRect(
-    borderRadius: BorderRadius.circular(18),
-    child: Container(
-      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      decoration: BoxDecoration(
-        color: AppTheme.dark,
+  Widget _mainBannerSlide() => Container(
+    margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        decoration: BoxDecoration(
+        image: const DecorationImage(
+          image: AssetImage('assets/background/banner5.jpg'),
+          fit: BoxFit.cover,
+          alignment: Alignment.centerRight,
+        ),
         borderRadius: BorderRadius.circular(18),
       ),
-      child: Row(
+      child: Stack(
         children: [
-          Expanded(
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.black.withValues(alpha: 0.60),
+                    Colors.transparent,
+                  ],
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  stops: const [0.0, 0.65],
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
@@ -422,15 +442,11 @@ class _SupplementStoreScreenState extends State<SupplementStoreScreen> {
               ],
             ),
           ),
-          const Icon(
-            Icons.shopping_bag_outlined,
-            color: Colors.white24,
-            size: 52,
-          ),
         ],
       ),
     ),
-  );
+  ),
+);
 
   Widget _dealsBannerSlide(List<SupplementItem> deals) => ClipRRect(
     borderRadius: BorderRadius.circular(18),

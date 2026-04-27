@@ -69,6 +69,7 @@ flutter:
   assets:
 
     - assets/
+    - assets/background/
     - assets/intro.mp4
     - assets/welcome_1.jpg     
     - assets/welcome_2.mp4     
