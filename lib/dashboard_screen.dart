@@ -36,15 +36,18 @@ class CartManager {
   void addItem(CartItem item) {
     final idx = items.indexWhere((i) => i.id == item.id);
     if (idx >= 0) {
+      final existing = items[idx];
+      final ms = item.maxStock > 0 ? item.maxStock : existing.maxStock;
+      final newQty = existing.quantity + item.quantity;
+      final capped = ms > 0 ? newQty.clamp(0, ms) : newQty;
       items[idx] = CartItem(
-        id: item.id,
-        name: item.name,
-        price: item.price,
-        quantity: items[idx].quantity + 1,
-        icon: item.icon,
-        imageUrl: items[idx].imageUrl.isNotEmpty
-            ? items[idx].imageUrl
-            : item.imageUrl,
+        id: existing.id,
+        name: existing.name,
+        price: existing.price,
+        quantity: capped,
+        icon: existing.icon,
+        imageUrl: existing.imageUrl.isNotEmpty ? existing.imageUrl : item.imageUrl,
+        maxStock: ms,
       );
     } else {
       items.add(item);
@@ -63,13 +66,16 @@ class CartManager {
       if (qty <= 0) {
         items.removeAt(idx);
       } else {
+        final ms = items[idx].maxStock;
+        final capped = ms > 0 ? qty.clamp(0, ms) : qty;
         items[idx] = CartItem(
           id: items[idx].id,
           name: items[idx].name,
           price: items[idx].price,
-          quantity: qty,
+          quantity: capped,
           icon: items[idx].icon,
-          imageUrl: items[idx].imageUrl, // preserve imageUrl
+          imageUrl: items[idx].imageUrl,
+          maxStock: ms,
         );
       }
       _notify();
@@ -86,6 +92,7 @@ class CartItem {
   final int quantity;
   final IconData icon;
   final String imageUrl;
+  final int maxStock; // 0 = unlimited
   const CartItem({
     required this.id,
     required this.name,
@@ -93,6 +100,7 @@ class CartItem {
     required this.quantity,
     required this.icon,
     this.imageUrl = '',
+    this.maxStock = 0,
   });
 }
 

@@ -22,6 +22,11 @@ int _safeInt(dynamic v) {
   return int.tryParse(v.toString()) ?? 0;
 }
 
+String _titleCase(String s) => s
+    .split(' ')
+    .map((w) => w.isEmpty ? '' : w[0].toUpperCase() + w.substring(1).toLowerCase())
+    .join(' ');
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // ADMIN ROLE MODEL
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -640,10 +645,17 @@ class _RevenueOverview extends StatelessWidget {
       stream: FirebaseFirestore.instance.collection('deliveryOrders').snapshots(),
       builder: (_, snap) {
         final docs = snap.data?.docs ?? [];
+        final now = DateTime.now();
+        final weekStart = DateTime(now.year, now.month, now.day - (now.weekday - 1));
         double totalRev = 0, completedRev = 0, pendingRev = 0;
         int completed = 0, pending = 0, cancelled = 0;
         for (final d in docs) {
           final data = d.data() as Map<String, dynamic>;
+          final ts = data['date'];
+          if (ts is Timestamp) {
+            final orderDate = ts.toDate();
+            if (orderDate.isBefore(weekStart)) continue;
+          }
           final total = _safeDouble(data['total']);
           final status = data['status'] as String? ?? '';
           totalRev += total;
@@ -673,7 +685,7 @@ class _RevenueOverview extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Total Revenue',
+                  const Text('This Week\'s Revenue',
                       style: TextStyle(fontFamily: 'Poppins', color: Colors.white70, fontSize: 12)),
                   const SizedBox(height: 4),
                   Text('${totalRev.toStringAsFixed(2)} JOD',
@@ -766,94 +778,115 @@ class _MiniStatCard extends StatelessWidget {
   );
 }
 
-// ── Top Products ──────────────────────────────────────────────────────────────
+// ── Top Products (ranked by actual units sold from orders) ───────────────────
 class _TopSellersList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('supplements')
-          .orderBy('price', descending: true)
-          .limit(5)
-          .snapshots(),
+      stream: FirebaseFirestore.instance.collection('deliveryOrders').snapshots(),
       builder: (_, snap) {
         if (!snap.hasData) {
           return const Center(
               child: CircularProgressIndicator(color: AppTheme.primary));
         }
-        final docs = snap.data!.docs;
-        if (docs.isEmpty) return _EmptyState(label: 'No products yet');
+
+        // Aggregate units sold per supplementId from every order
+        final Map<String, int> salesCount = {};
+        final Map<String, Map<String, dynamic>> itemCache = {};
+
+        for (final doc in snap.data!.docs) {
+          final data = doc.data() as Map<String, dynamic>;
+          final items =
+              (data['items'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+          for (final item in items) {
+            final id = item['supplementId'] as String? ?? '';
+            if (id.isEmpty ||
+                id.startsWith('meal_') ||
+                id.startsWith('fitstation_')) { continue; }
+            final qty = (item['qty'] as num?)?.toInt() ?? 1;
+            salesCount[id] = (salesCount[id] ?? 0) + qty;
+            itemCache.putIfAbsent(id, () => item);
+          }
+        }
+
+        if (salesCount.isEmpty) {
+          return _EmptyState(label: 'No sales data yet');
+        }
+
+        // Sort descending by units sold, take top 5
+        final top5 = (salesCount.entries.toList()
+              ..sort((a, b) => b.value.compareTo(a.value)))
+            .take(5)
+            .toList();
+
         return Column(
-          children: List.generate(docs.length, (i) {
-            final d = docs[i].data() as Map<String, dynamic>;
-            final name = d['name'] as String? ?? '—';
-            final price = _safeDouble(d['price']);
-            final discount = d['discountPrice'] != null
-                ? _safeDouble(d['discountPrice']) : null;
-            final imageUrl = d['imageUrl'] as String? ?? '';
+          children: List.generate(top5.length, (i) {
+            final entry = top5[i];
+            final item = itemCache[entry.key]!;
+            final name = item['name'] as String? ?? '—';
+            final price = _safeDouble(item['price']);
+            final imageUrl = item['imageUrl'] as String? ?? '';
+            final unitsSold = entry.value;
+
             return Container(
               margin: const EdgeInsets.only(bottom: 10),
               padding: const EdgeInsets.all(12),
               decoration: AppTheme.card(radius: 14),
               child: Row(
                 children: [
-                  Container(
-                    width: 42, height: 42,
-                    decoration: BoxDecoration(
-                      color: AppTheme.primary.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: imageUrl.isNotEmpty
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: Image.network(imageUrl, fit: BoxFit.cover,
-                                errorBuilder: (_, e, st) => Icon(
-                                    Icons.inventory_2_rounded,
-                                    color: AppTheme.primary, size: 20)),
-                          )
-                        : Icon(Icons.inventory_2_rounded,
-                            color: AppTheme.primary, size: 20),
-                  ),
+                  _SupImage(url: imageUrl),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(name,
+                        Text(_titleCase(name),
                             style: AppTheme.subheading.copyWith(fontSize: 13),
                             overflow: TextOverflow.ellipsis),
-                        const SizedBox(height: 2),
+                        const SizedBox(height: 3),
                         Row(
                           children: [
-                            if (discount != null) ...[
-                              Text('${discount.toStringAsFixed(0)} JOD',
-                                  style: TextStyle(fontFamily: 'Poppins',
-                                      fontSize: 12, fontWeight: FontWeight.w700,
-                                      color: AppTheme.primary)),
-                              const SizedBox(width: 5),
-                              Text('${price.toStringAsFixed(0)} JOD',
-                                  style: AppTheme.body.copyWith(
-                                      fontSize: 11,
-                                      decoration: TextDecoration.lineThrough)),
-                            ] else
-                              Text('${price.toStringAsFixed(0)} JOD',
-                                  style: TextStyle(fontFamily: 'Poppins',
-                                      fontSize: 12, fontWeight: FontWeight.w700,
-                                      color: AppTheme.primary)),
+                            Text('${price.toStringAsFixed(0)} JOD',
+                                style: TextStyle(
+                                    fontFamily: 'Poppins',
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppTheme.primary)),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF4CAF50)
+                                    .withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text('$unitsSold sold',
+                                  style: const TextStyle(
+                                      fontFamily: 'Poppins',
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF4CAF50))),
+                            ),
                           ],
                         ),
                       ],
                     ),
                   ),
+                  const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: AppTheme.primary.withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text('#${i + 1}',
-                        style: TextStyle(fontFamily: 'Poppins', fontSize: 11,
-                            fontWeight: FontWeight.w800, color: AppTheme.primary)),
+                        style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: AppTheme.primary)),
                   ),
                 ],
               ),
@@ -1696,7 +1729,7 @@ class _SupplementCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  data['name'] as String? ?? '—',
+                  _titleCase(data['name'] as String? ?? '—'),
                   style: AppTheme.subheading.copyWith(fontSize: 14),
                 ),
                 Text(
@@ -2405,25 +2438,68 @@ class _FullOrderCardState extends State<_FullOrderCard> {
                           ],
                         ),
                 ] else ...[
-                  // Status badge (read-only for non-pending orders)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _statusColor(status).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      _statusLabel(status),
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: _statusColor(status),
+                  // Status badge + driver info for assigned orders
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _statusColor(status).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          _statusLabel(status),
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: _statusColor(status),
+                          ),
+                        ),
                       ),
-                    ),
+                      if ((data['driverId'] as String?) != null) ...[
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: StreamBuilder<DocumentSnapshot>(
+                            stream: FirebaseFirestore.instance
+                                .collection('drivers')
+                                .doc(data['driverId'] as String)
+                                .snapshots(),
+                            builder: (_, snap) {
+                              final d = snap.data?.data() as Map<String, dynamic>?;
+                              final name = d?['name'] as String? ??
+                                  d?['fullName'] as String? ?? 'Driver';
+                              final phone = d?['phone'] as String? ?? '';
+                              return Row(
+                                children: [
+                                  const Icon(Icons.delivery_dining_rounded,
+                                      size: 15, color: AppTheme.primary),
+                                  const SizedBox(width: 5),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(name,
+                                            style: AppTheme.subheading.copyWith(
+                                                fontSize: 12),
+                                            overflow: TextOverflow.ellipsis),
+                                        if (phone.isNotEmpty)
+                                          Text(phone,
+                                              style: AppTheme.body.copyWith(
+                                                  fontSize: 10)),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ],
               ],

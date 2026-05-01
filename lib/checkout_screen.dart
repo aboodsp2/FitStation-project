@@ -665,19 +665,28 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             'deliveryFee': 2.0,
           });
 
-      // Deduct stock quantities from supplements collection using a transaction
+      // Deduct stock quantities — best-effort, never blocks order completion
       final db = FirebaseFirestore.instance;
-      await db.runTransaction((txn) async {
-        for (final cartItem in widget.cartItems) {
-          final ref = db.collection('supplements').doc(cartItem.id);
-          final snap = await txn.get(ref);
-          if (snap.exists) {
-            final current = (snap.data()?['quantity'] as num?)?.toInt() ?? 0;
-            final newQty = (current - cartItem.quantity).clamp(0, 99999);
-            txn.update(ref, {'quantity': newQty});
-          }
+      final supplementItems = widget.cartItems
+          .where((i) => !i.id.startsWith('meal_') && !i.id.startsWith('fitstation_'))
+          .toList();
+      if (supplementItems.isNotEmpty) {
+        try {
+          await db.runTransaction((txn) async {
+            for (final cartItem in supplementItems) {
+              final ref = db.collection('supplements').doc(cartItem.id);
+              final snap = await txn.get(ref);
+              if (snap.exists) {
+                final current = (snap.data()?['quantity'] as num?)?.toInt() ?? 0;
+                final newQty = (current - cartItem.quantity).clamp(0, 99999);
+                txn.update(ref, {'quantity': newQty});
+              }
+            }
+          });
+        } catch (_) {
+          // Stock update failed silently — order is already saved
         }
-      });
+      }
 
       // Also keep local OrderManager in sync for this session
       OrderManager().placeOrder(

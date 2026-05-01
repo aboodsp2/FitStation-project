@@ -66,6 +66,23 @@ class _SupplementStoreScreenState extends State<SupplementStoreScreen> {
       showGuestSignupSheet(context);
       return;
     }
+    final currentQty = CartManager().items.fold(0, (s, i) => i.id == item.id ? s + i.quantity : s);
+    if (item.quantity > 0 && currentQty + qty > item.quantity) {
+      final avail = item.quantity - currentQty;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            avail <= 0 ? "Only ${item.quantity} in stock (already in cart)" : "Only $avail more available",
+            style: const TextStyle(fontFamily: 'Poppins'),
+          ),
+          backgroundColor: Colors.orange.shade700,
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+      return;
+    }
     for (int i = 0; i < qty; i++) {
       CartManager().addItem(
         CartItem(
@@ -75,6 +92,7 @@ class _SupplementStoreScreenState extends State<SupplementStoreScreen> {
           quantity: 1,
           icon: Icons.science_rounded,
           imageUrl: item.imageUrl,
+          maxStock: item.quantity,
         ),
       );
     }
@@ -1452,6 +1470,23 @@ class _CategoryScreenState extends State<_CategoryScreen> {
       return;
     }
     final qty = _qtys[item.id] ?? 1;
+    final currentQty = CartManager().items.fold(0, (s, i) => i.id == item.id ? s + i.quantity : s);
+    if (item.quantity > 0 && currentQty + qty > item.quantity) {
+      final avail = item.quantity - currentQty;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            avail <= 0 ? "Only ${item.quantity} in stock (already in cart)" : "Only $avail more available",
+            style: const TextStyle(fontFamily: 'Poppins'),
+          ),
+          backgroundColor: Colors.orange.shade700,
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+      return;
+    }
     for (int i = 0; i < qty; i++) {
       CartManager().addItem(
         CartItem(
@@ -1461,6 +1496,7 @@ class _CategoryScreenState extends State<_CategoryScreen> {
           quantity: 1,
           icon: Icons.science_rounded,
           imageUrl: item.imageUrl,
+          maxStock: item.quantity,
         ),
       );
     }
@@ -1486,7 +1522,9 @@ class _CategoryScreenState extends State<_CategoryScreen> {
       builder: (_) => _ProductDetailSheet(
         item: item,
         onAddToCart: (qty) {
-          for (int i = 0; i < qty; i++) {
+          final currentQty = CartManager().items.fold(0, (s, i) => i.id == item.id ? s + i.quantity : s);
+          final allowed = item.quantity > 0 ? (item.quantity - currentQty).clamp(0, qty) : qty;
+          for (int i = 0; i < allowed; i++) {
             CartManager().addItem(
               CartItem(
                 id: item.id,
@@ -1494,6 +1532,7 @@ class _CategoryScreenState extends State<_CategoryScreen> {
                 price: item.effectivePrice,
                 quantity: 1,
                 icon: Icons.science_rounded,
+                maxStock: item.quantity,
               ),
             );
           }
@@ -1825,6 +1864,23 @@ class _DealsScreenState extends State<DealsScreen> {
       return;
     }
     final qty = _qtys[item.id] ?? 1;
+    final currentQty = CartManager().items.fold(0, (s, i) => i.id == item.id ? s + i.quantity : s);
+    if (item.quantity > 0 && currentQty + qty > item.quantity) {
+      final avail = item.quantity - currentQty;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            avail <= 0 ? "Only ${item.quantity} in stock (already in cart)" : "Only $avail more available",
+            style: const TextStyle(fontFamily: 'Poppins'),
+          ),
+          backgroundColor: Colors.orange.shade700,
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+      return;
+    }
     for (int i = 0; i < qty; i++) {
       CartManager().addItem(
         CartItem(
@@ -1834,6 +1890,7 @@ class _DealsScreenState extends State<DealsScreen> {
           quantity: 1,
           icon: Icons.science_rounded,
           imageUrl: item.imageUrl,
+          maxStock: item.quantity,
         ),
       );
     }
@@ -1859,7 +1916,9 @@ class _DealsScreenState extends State<DealsScreen> {
       builder: (_) => _ProductDetailSheet(
         item: item,
         onAddToCart: (qty) {
-          for (int i = 0; i < qty; i++) {
+          final currentQty = CartManager().items.fold(0, (s, i) => i.id == item.id ? s + i.quantity : s);
+          final allowed = item.quantity > 0 ? (item.quantity - currentQty).clamp(0, qty) : qty;
+          for (int i = 0; i < allowed; i++) {
             CartManager().addItem(
               CartItem(
                 id: item.id,
@@ -1868,6 +1927,7 @@ class _DealsScreenState extends State<DealsScreen> {
                 quantity: 1,
                 icon: Icons.science_rounded,
                 imageUrl: item.imageUrl,
+                maxStock: item.quantity,
               ),
             );
           }
@@ -2197,6 +2257,22 @@ class _AllSupplementsScreenState extends State<_AllSupplementsScreen> {
       showGuestSignupSheet(context);
       return;
     }
+    final currentQty = CartManager().items.fold(0, (s, i) => i.id == item.id ? s + i.quantity : s);
+    if (item.quantity > 0 && currentQty >= item.quantity) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            "Only ${item.quantity} in stock (already in cart)",
+            style: const TextStyle(fontFamily: 'Poppins'),
+          ),
+          backgroundColor: Colors.orange.shade700,
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+      return;
+    }
     CartManager().addItem(
       CartItem(
         id: item.id,
@@ -2204,6 +2280,7 @@ class _AllSupplementsScreenState extends State<_AllSupplementsScreen> {
         price: item.effectivePrice,
         quantity: 1,
         icon: Icons.science_rounded,
+        maxStock: item.quantity,
       ),
     );
     ScaffoldMessenger.of(context).showSnackBar(

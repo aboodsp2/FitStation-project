@@ -45,7 +45,7 @@ class SupplementItem {
         : null;
     return SupplementItem(
       id: doc.id,
-      name: d['name']?.toString() ?? '',
+      name: _toTitleCase(d['name']?.toString() ?? ''),
       category: d['category']?.toString() ?? '',
       unit: d['unit']?.toString() ?? '',
       price: _toDouble(d['price']),
@@ -57,6 +57,11 @@ class SupplementItem {
     );
   }
 }
+
+String _toTitleCase(String s) => s
+    .split(' ')
+    .map((w) => w.isEmpty ? '' : w[0].toUpperCase() + w.substring(1).toLowerCase())
+    .join(' ');
 
 // ─── SMART IMAGE WIDGET ──────────────────────────────────────────────────────
 class SupplementImage extends StatelessWidget {

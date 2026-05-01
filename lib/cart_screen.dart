@@ -552,7 +552,26 @@ class _CartItemTileState extends State<_CartItemTile> {
               ),
               _qtyBtn(
                 Icons.add,
-                () => CartManager().updateQuantity(item.id, item.quantity + 1),
+                () {
+                  if (item.maxStock > 0 && item.quantity >= item.maxStock) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          "Only ${item.maxStock} in stock",
+                          style: const TextStyle(fontFamily: 'Poppins'),
+                        ),
+                        backgroundColor: Colors.orange.shade700,
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                  } else {
+                    CartManager().updateQuantity(item.id, item.quantity + 1);
+                  }
+                },
               ),
             ],
           ),
